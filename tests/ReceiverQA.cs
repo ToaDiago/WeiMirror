@@ -146,6 +146,15 @@ static class ReceiverQA
                     Environment.GetEnvironmentVariable("WEIMIRROR_720_RECEIVER_DIRECTORY")==oldDirectory,
                     "720p60 routes only its custom host through the compatible carrier and restores launch environment");
                 core.StopWireless();
+                core.StartWireless("高刷",1920,1080,120);
+                core.Start(air,pane.Handle,true);
+                Check(FixtureSupport.SessionFps==120 && FixtureSupport.ReceiverFps==30,
+                    "1080p120 keeps the core carrier but requests 120 fps from the wireless capture session");
+                core.StopWireless();
+                core.StartWireless("默认高清");
+                Check(FixtureSupport.ReceiverWidth==5120 && FixtureSupport.ReceiverHeight==2880 && FixtureSupport.ReceiverFps==60,
+                    "default AirPlay advertises an adaptive high-resolution sink for tall iPhones");
+                core.StopWireless();
                 core.Start(usb,pane.Handle,false);
                 core.StartWireless("QA");
                 core.StopWireless();

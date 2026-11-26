@@ -34,25 +34,29 @@ namespace MirrorDesk
         CancellationTokenSource job;
         bool closing;
 
-        public SetupDialog()
+        readonly AppPalette palette;
+        readonly DpiLayout dpiLayout;
+
+        public SetupDialog() : this(new AppPalette(0,false)) {}
+        public SetupDialog(AppPalette palette)
         {
+            this.palette=palette;
             SuspendLayout();
             Text = "准备投屏组件 · 微映";
             Font = Theme.Font(13);
-            AutoScaleDimensions = new SizeF(96,96);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(784, 558);
             MinimumSize = new Size(420, 300);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = false;
             BackColor = WashColor;
-            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, BackColor = WashColor };
+            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Name="Canvas" };
             var grid = Theme.Grid(1,4);
             grid.Dock = DockStyle.Top; grid.AutoSize = true; grid.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             Theme.Cols(grid,-1); Theme.Rows(grid,100,184,148,0);
             grid.RowStyles[3].SizeType=SizeType.AutoSize;
             var heading=Theme.Grid(1,2);
-            heading.Padding=new Padding(24,10,24,12); heading.BackColor=HeaderColor;
+            heading.Padding=new Padding(24,10,24,12); heading.Name="Header";
             Theme.Cols(heading,-1); Theme.Rows(heading,48,-1);
             heading.Controls.Add(Theme.Label("准备投屏组件",24,Color.White,true),0,0);
             heading.Controls.Add(Theme.Label("iPhoneMirror v1.8.3  ·  Windows x64",13,Color.FromArgb(191,222,216)),0,1);
@@ -60,7 +64,7 @@ namespace MirrorDesk
 
             var sources=Theme.Grid(1,3);
             sources.Margin=new Padding(16,14,16,8); sources.Padding=new Padding(14,5,14,13);
-            sources.BackColor=Color.White; Theme.Cols(sources,-1); Theme.Rows(sources,40,-1,48);
+            sources.Name="Card"; Theme.Cols(sources,-1); Theme.Rows(sources,40,-1,48);
             sources.Controls.Add(Theme.Label("组件来源",16,InkColor,true),0,0);
             StyleButton(download,true);
             download.Margin=new Padding(0,2,0,8); sources.Controls.Add(download,0,1);
@@ -74,7 +78,7 @@ namespace MirrorDesk
 
             var paths=Theme.Grid(2,2);
             paths.Margin=new Padding(16,0,16,8); paths.Padding=new Padding(14,5,14,12);
-            paths.BackColor=Color.White; Theme.Cols(paths,-1,114); Theme.Rows(paths,42,-1);
+            paths.Name="Card"; Theme.Cols(paths,-1,114); Theme.Rows(paths,42,-1);
             paths.Controls.Add(directoryLabel,0,0); StyleButton(copy);
             copy.Margin=new Padding(8,1,0,3); paths.Controls.Add(copy,1,0);
             directory.Text = RuntimePack.PackageDirectory(packageId);
@@ -85,7 +89,7 @@ namespace MirrorDesk
 
             var progress=Theme.Grid(2,3);
             progress.Padding=new Padding(14,4,14,12); progress.Margin=new Padding(16,0,16,14);
-            progress.BackColor=Color.White; progress.AutoSize=true; progress.AutoSizeMode=AutoSizeMode.GrowAndShrink;
+            progress.Name="Card"; progress.AutoSize=true; progress.AutoSizeMode=AutoSizeMode.GrowAndShrink;
             Theme.Cols(progress,-1,108); Theme.Rows(progress,0,8,46);
             progress.RowStyles[0].SizeType=SizeType.AutoSize;
             status.AutoSize=true; status.AutoEllipsis=false; status.MinimumSize=new Size(0,38);
@@ -96,6 +100,8 @@ namespace MirrorDesk
             StyleButton(cancel); cancel.Margin=new Padding(0,6,0,0); progress.Controls.Add(cancel,1,2);
             grid.Controls.Add(progress,0,3);
             scroll.Controls.Add(grid); Controls.Add(scroll);
+            palette.Apply(this,download);
+            dpiLayout=new DpiLayout(this);
             ResumeLayout(true);
             Shown += delegate { download.Focus(); };
             copyFeedback.Tick += delegate { copyFeedback.Stop(); copy.Text="复制路径"; };
@@ -145,11 +151,21 @@ namespace MirrorDesk
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            palette.ApplyCaption(this);
+            int dpi=DpiLayout.Read(this);
+            dpiLayout.Apply(dpi);
+            ClientSize=new Size(DpiLayout.Pixels(784,dpi/96f),DpiLayout.Pixels(558,dpi/96f));
             Rectangle area = Screen.FromControl(Owner ?? this).WorkingArea;
             MinimumSize = new Size(Math.Min(MinimumSize.Width,area.Width),Math.Min(MinimumSize.Height,area.Height));
             Size = new Size(Math.Min(Width,area.Width),Math.Min(Height,area.Height));
             Location = new Point(Math.Max(area.Left,Math.Min(Left,area.Right-Width)),
                 Math.Max(area.Top,Math.Min(Top,area.Bottom-Height)));
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            dpiLayout?.Apply(e.DeviceDpiNew);
         }
 
         async Task Prepare(string path, bool isFolder)
@@ -163,7 +179,7 @@ namespace MirrorDesk
             download.Enabled = zip.Enabled = folder.Enabled = false;
             cancel.Text = "取消";
             bar.Value = 0; bar.Visible = true;
-            progressValue.Text=""; status.ForeColor=InkColor;
+            progressValue.Text=""; status.ForeColor=palette.Ink;
             status.Text = isFolder ? "正在检查组件目录…" : "正在准备组件…";
             try
             {
@@ -181,7 +197,7 @@ namespace MirrorDesk
                 if (token.IsCancellationRequested) EngineDirectory = null;
             }
             catch (OperationCanceledException) { status.Text = "已取消。"; }
-            catch (Exception ex) { status.Text = ex.GetBaseException().Message; status.ForeColor=Color.FromArgb(147,57,38); }
+            catch (Exception ex) { status.Text = ex.GetBaseException().Message; status.ForeColor=palette.Alert; }
             finally
             {
                 job.Dispose(); job = null;

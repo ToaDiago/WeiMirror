@@ -226,13 +226,14 @@ namespace MirrorDesk
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
-            if (m.Msg!=DisplayChange || !geometryReady || !IsHandleCreated || IsDisposed || Disposing) return;
+            if ((m.Msg!=DisplayChange && m.Msg!=0x02E0) || !geometryReady || !IsHandleCreated || IsDisposed || Disposing) return;
             BeginInvoke(new Action(delegate {
                 if (IsDisposed || Disposing || controllerClosing) return;
                 var display=Screen.FromControl(this);
                 var work=display.WorkingArea;
                 arrangingWindow=true;
                 try {
+                    ScalePreview(DpiLayout.Read(this));
                     LimitMinimum(work);
                     if (IsFullscreen) {
                         Bounds=display.Bounds;

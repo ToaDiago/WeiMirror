@@ -32,6 +32,7 @@ namespace MirrorDesk
         readonly PreferencesStore preferencesStore;
         bool preferencesDirty, pinned;
         string previewLayout = "";
+        bool alwaysShowToolbar;
         internal Func<Form,string> SnapshotDestination = form => ((PreviewWindow)form).ChooseSnapshotPath();
         readonly ToolTip detail = new ToolTip();
         readonly SemaphoreSlim serial = new SemaphoreSlim(1,1);
@@ -49,7 +50,7 @@ namespace MirrorDesk
         static ComboBox Picker()
         {
             return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top,
-                IntegralHeight = true, FlatStyle = FlatStyle.Standard, Margin = Padding.Empty };
+                IntegralHeight = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty };
         }
         public MainForm(string initialEngine) : this(initialEngine, null) {}
         internal MainForm(string initialEngine, PreferencesStore store)
@@ -65,7 +66,18 @@ namespace MirrorDesk
                 mode.SelectedIndex=saved.Wireless ? 1 : 0;
                 quality.SelectedIndex=saved.QualityIndex; name.Text=saved.ReceiverName;
                 audio.Checked=saved.PlayAudio; pinned=saved.AlwaysOnTop; previewLayout=saved.PreviewLayout;
+                appearance.SelectedIndex=saved.ThemeIndex;
+                darkMode.Checked=saved.DarkMode;
+                alwaysShowToolbar=showToolbar.Checked=saved.AlwaysShowToolbar;
             }
+            ChangeAppearance();
+            appearance.SelectedIndexChanged+=delegate { ChangeAppearance(); PreferencesChanged(); };
+            darkMode.CheckedChanged+=delegate { ChangeAppearance(); PreferencesChanged(); };
+            showToolbar.CheckedChanged+=delegate {
+                alwaysShowToolbar=showToolbar.Checked;
+                if (preview!=null) preview.AlwaysShowToolbar=alwaysShowToolbar;
+                PreferencesChanged();
+            };
             preferenceTimer.Tick += delegate { SavePreferences(); };
             footer.TextChanged += delegate { detail.SetToolTip(footer, footer.Text); };
             UpdateControls();
@@ -112,7 +124,8 @@ namespace MirrorDesk
             if (!preferencesDirty || preferencesStore==null) return;
             var next=new UserPreferences {
                 Wireless=Wireless, ReceiverName=name.Text, QualityIndex=quality.SelectedIndex,
-                PlayAudio=audio.Checked, AlwaysOnTop=pinned, PreviewLayout=previewLayout
+                PlayAudio=audio.Checked, AlwaysOnTop=pinned, PreviewLayout=previewLayout,
+                ThemeIndex=appearance.SelectedIndex, DarkMode=darkMode.Checked, AlwaysShowToolbar=alwaysShowToolbar
             };
             preferencesDirty=!preferencesStore.TrySave(next);
             if (preferencesDirty && !closing) footer.Text="当前设置已生效，写入本机偏好文件失败。";
@@ -320,7 +333,7 @@ namespace MirrorDesk
         async Task PrimaryAction()
         {
             if (core == null) {
-                using (var setup = new SetupDialog())
+                using (var setup = new SetupDialog(palette))
                     if (setup.ShowDialog(this) == DialogResult.OK) await OpenEngine(setup.EngineDirectory);
                 return;
             }
@@ -340,7 +353,9 @@ namespace MirrorDesk
         }
         PreviewWindow CreatePreview(Device device)
         {
-            var window = new PreviewWindow { Icon=this.Icon, Pinned=pinned };
+            var window = new PreviewWindow { Icon=this.Icon, Pinned=pinned, AlwaysShowToolbar=alwaysShowToolbar };
+            window.ApplyPalette(palette);
+            window.ToolbarPreferenceChanged+=delegate { showToolbar.Checked=window.AlwaysShowToolbar; };
             window.RestorePreviewLayout(previewLayout);
             preview=window;
             window.SetSource(device.Name);
@@ -420,8 +435,8 @@ namespace MirrorDesk
                     if (check!=revision || closing) return;
                     if (state==WirelessState.Failed || state==WirelessState.Off) {
                         var profile=(WirelessProfile)quality.SelectedItem;
-                        string guidance=profile.Uses720Host
-                            ? "720p60 的接收服务未能启动或已中断。请确认组件完整、没有其他投屏服务占用，再试此档位。也可以先用 1080p60 或 720p30 继续接收。"
+                        string guidance=profile.UsesCustomHost
+                            ? profile + " 接收服务未能启动或已中断。请检查组件与端口占用，或切换到高清自动 / 1080p60 后重连。"
                             : "AirPlay 接收服务已中断。请检查其他接收程序或专用网络防火墙权限，然后重新开启接收。";
                         await StopAfterPoll(guidance); return;
                     }
@@ -471,7 +486,8 @@ namespace MirrorDesk
                         preview.SetStats(s.Width+" × "+s.Height+"   "+s.Fps.ToString("0.#")+" fps");
                         if (s.ProtectedVideo) {
                             footer.Text="画面持续为黑，可能是受保护内容。" + (s.ProtectedAudioActive ? "仍在接收音频。" : "");
-                        } else footer.Text=(Wireless ? "AirPlay  ·  " : "USB  ·  ")+sourceName;
+                        } else footer.Text=(Wireless ? "AirPlay  ·  " : "USB  ·  ")+sourceName+
+                            "  ·  "+s.Width+" × "+s.Height+"  ·  "+s.Fps.ToString("0.#")+" fps";
                     } else {
                         preview.SetStats("");
                         preview.SetSnapshotAvailable(false);
@@ -514,7 +530,7 @@ namespace MirrorDesk
         }
         void ShowAbout()
         {
-            using (var form = new ToolsDialog()) form.ShowDialog(this);
+            using (var form = new ToolsDialog(palette)) form.ShowDialog(this);
         }
         async void OnClosing(object sender,FormClosingEventArgs e)
         {

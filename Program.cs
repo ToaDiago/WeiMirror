@@ -8,8 +8,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("微映 · WeiMirror")]
 [assembly: AssemblyProduct("WeiMirror")]
 [assembly: AssemblyDescription("iPad 和 iPhone 的 USB / AirPlay 投屏接收端")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace MirrorDesk
 {
@@ -101,7 +101,7 @@ namespace MirrorDesk
         public static void OpenBenchmark(IWin32Window owner)
         {
             try {
-                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WeiMirror", "tools", "1.3");
+                string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WeiMirror", "tools", "1.4");
                 Directory.CreateDirectory(folder);
                 string path = Path.Combine(folder,"WeiMirror-Latency.html");
                 Write(Benchmark,path);
@@ -112,7 +112,7 @@ namespace MirrorDesk
         public static void Export(IWin32Window owner, bool benchmark)
         {
             using (var picker = new SaveFileDialog {
-                FileName = benchmark ? "WeiMirror-Latency.html" : "WeiMirror-1.3-source.zip",
+                FileName = benchmark ? "WeiMirror-Latency.html" : "WeiMirror-1.4-source.zip",
                 Filter = benchmark ? "离线测试页 (*.html)|*.html" : "源代码归档 (*.zip)|*.zip", AddExtension = true })
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK) return;

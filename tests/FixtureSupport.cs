@@ -13,6 +13,7 @@ public static class FixtureSupport
     public static readonly List<string> Calls = new List<string>();
     public static volatile bool Audio, AirStarted, AttachFails, ShowAirDevice = true;
     public static volatile bool ShowSecondAirDevice, RefuseFirstAirDevice, WaitingForFrames;
+    public static int SessionFps;
     public static volatile bool ShowUsbDevice = true, ShowForeignUsb, UsbLossIsTerminal, RefuseUsbSession;
     public static int UsbEnumerations, ForeignUsbAttempts, UsbAttempts;
     public static volatile int VideoWidth=1920, VideoHeight=1080;
@@ -112,6 +113,7 @@ public static class FixtureSupport
         }
         if (Marshal.ReadInt32(options) != 48 || Marshal.ReadInt32(options, 4) != 18) return -1;
         ActiveId = name;
+        SessionFps=Marshal.ReadInt32(options,16);
         Audio = Marshal.ReadInt32(options, 20) != 0; Streaming = true; Allocated = true;
         Marshal.WriteInt64(handle, 12345678909L); return Trace(air ? "air-session" : "usb-session");
     }

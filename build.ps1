@@ -8,14 +8,16 @@ $csharp = Join-Path $PSHOME 'Microsoft.CodeAnalysis.CSharp.dll'
 if (!(Test-Path $csharp)) { throw 'Run this script in PowerShell 7 for Windows x64 (pwsh).' }
 Add-Type -Path (Join-Path $PSHOME 'Microsoft.CodeAnalysis.dll')
 Add-Type -Path $csharp
-$files = @(Get-ChildItem $root -File | Sort-Object Name)
+$files = @(Get-ChildItem -LiteralPath $root -File -Force | Sort-Object Name)
+$testFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -File -Recurse | Sort-Object FullName)
 $archive = Join-Path $outDir 'WeiMirror.Source.zip'
 $zipStream = [IO.File]::Create($archive)
 try {
     $zip = [IO.Compression.ZipArchive]::new($zipStream,[IO.Compression.ZipArchiveMode]::Create,$true)
     try {
-        foreach ($file in $files) {
-            $entry = $zip.CreateEntry($file.Name,[IO.Compression.CompressionLevel]::Optimal)
+        foreach ($file in ($files + $testFiles)) {
+            $relativePath = [IO.Path]::GetRelativePath($root,$file.FullName).Replace('\','/')
+            $entry = $zip.CreateEntry($relativePath,[IO.Compression.CompressionLevel]::Optimal)
             $entry.LastWriteTime = [DateTimeOffset]::new(2000,1,1,0,0,0,[TimeSpan]::Zero)
             $inputStream = $file.OpenRead()
             $entryStream = $entry.Open()

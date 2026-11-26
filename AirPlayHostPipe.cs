@@ -17,6 +17,7 @@ namespace MirrorDesk
     {
         const int HeaderSize = 392, MaxPayload = 64 * 1024 * 1024;
         const int MaxPackets = 48, MaxBytes = MaxPayload + 1024 * 1024;
+        const int MaxReusableFrameBytes = 8 * 1024 * 1024;
         enum Kind : ushort { Ready=1, Connected=2, Disconnected=3, Video=4, Audio=5, Volume=15 }
 
         sealed class Packet
@@ -163,7 +164,7 @@ namespace MirrorDesk
         void Release(Packet p)
         {
             bytes-=HeaderSize+p.Length;
-            if (p.Type==Kind.Video && p.Body!=null && p.Body.Length<=4*1024*1024 && videoBuffers.Count<3) videoBuffers.Add(p.Body);
+            if (p.Type==Kind.Video && p.Body!=null && p.Body.Length<=MaxReusableFrameBytes && videoBuffers.Count<3) videoBuffers.Add(p.Body);
             p.Body=null;
         }
         void Send(Packet p,IntPtr data,int length)

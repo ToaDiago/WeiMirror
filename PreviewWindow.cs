@@ -13,23 +13,44 @@ namespace MirrorDesk
         static readonly Color ActiveColor = Color.FromArgb(15, 92, 87);
         static readonly Color LightText = Color.FromArgb(235, 245, 246);
         static readonly Color ActiveText = Color.FromArgb(198, 252, 232);
-        readonly Panel toolbar = new Panel { Dock = DockStyle.Top, BackColor = BarColor };
-        readonly Panel stage = new Panel { Dock = DockStyle.Fill, BackColor = Color.Black };
+        readonly Panel toolbar = new Panel { Name="PreviewToolbar", BackColor=BarColor, Visible=false };
+        readonly Panel stage = new Panel { Dock = DockStyle.None, BackColor = Color.Black };
         readonly Panel surface = new Panel { Name = "VideoSurface", Dock = DockStyle.Fill, BackColor = Color.Black };
         readonly Label overlay = Theme.Label("", 16, Color.FromArgb(222, 235, 236));
         readonly Label stats = Theme.Label("", 13, LightText);
         readonly Label feedback = Theme.Label("", 13, LightText);
+        readonly Timer toolbarTimer = new Timer { Interval = 100 };
         readonly Timer feedbackTimer = new Timer { Interval = 4000 };
         readonly Button pin = new Button { Name = "PinPreview", Text = "置顶" };
         readonly Button snapshot = new Button { Name = "SaveSnapshot", Text = "截图" };
         readonly Button full = new Button { Name = "FullPreview", Text = "全屏" };
         readonly Button aspect = new Button { Name = "FollowAspect", Text = "跟随比例", AccessibleName = "窗口随画面比例调整" };
         readonly ToolTip tips = new ToolTip();
+        DpiLayout previewDpi;
+        AppPalette palette;
+        bool showToolbar;
         bool closePending, controllerClosing, snapshotAvailable, snapshotBusy, layingOut;
         string currentStats = "", snapshotMessage = "";
         Rectangle previousBounds;
         FormWindowState previousState;
 
+        public event EventHandler ToolbarPreferenceChanged;
+        public bool AlwaysShowToolbar
+        {
+            get { return showToolbar; }
+            set {
+                if (showToolbar==value) return;
+                showToolbar=value;
+                LayoutTools();
+                UpdateToolbar();
+                if (geometryReady) {
+                    preferredVideoArea=0;
+                    pendingFit=followAspect && !sourceSize.IsEmpty;
+                    FitIfPending();
+                }
+                ToolbarPreferenceChanged?.Invoke(this,EventArgs.Empty);
+            }
+        }
         public event EventHandler StopRequested;
         public event EventHandler PinChanged;
         public event EventHandler SnapshotRequested;
@@ -53,8 +74,7 @@ namespace MirrorDesk
         {
             Text = "微映投屏";
             Font = Theme.Font(13);
-            AutoScaleDimensions = new SizeF(96F, 96F);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.None;
             KeyPreview = true;
             ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
@@ -86,7 +106,7 @@ namespace MirrorDesk
             aspect.Click += delegate { ChangeAspectMode(); };
             UpdateAspectButton();
             toolbar.Controls.AddRange(new Control[] { stats, pin, snapshot, aspect, full });
-            toolbar.SizeChanged += delegate { LayoutTools(); };
+            ClientSizeChanged += delegate { LayoutTools(); };
             snapshot.Enabled = false;
 
             overlay.Name = "PreviewOverlay";
@@ -111,6 +131,11 @@ namespace MirrorDesk
             };
             Controls.Add(stage);
             Controls.Add(toolbar);
+            toolbar.BringToFront();
+            toolbarTimer.Tick+=delegate { UpdateToolbar(); };
+            Activated+=delegate { UpdateToolbar(); };
+            Deactivate+=delegate { if (!showToolbar) SetToolbarVisible(false); };
+            previewDpi=new DpiLayout(this);
 
             surface.DoubleClick += delegate { ToggleFullscreen(); };
             overlay.DoubleClick += delegate { ToggleFullscreen(); };
@@ -118,14 +143,44 @@ namespace MirrorDesk
 
         protected override void OnLoad(EventArgs e)
         {
-            CreateButtonIcons();
+            ScalePreview(DpiLayout.Read(this));
             LoadPlacement();
+            palette?.ApplyCaption(this);
+            toolbarTimer.Start();
             LayoutTools();
             base.OnLoad(e);
         }
 
-        static void StyleButton(Button button, bool active)
+        void ScalePreview(int dpi)
         {
+            if (!previewDpi.Apply(dpi)) return;
+            designMinimum=new Size(DpiLayout.Pixels(360,dpi/96f),DpiLayout.Pixels(240,dpi/96f));
+            LimitMinimum(Screen.FromControl(this).WorkingArea);
+            CreateButtonIcons();
+            LayoutTools();
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            if (previewDpi!=null) ScalePreview(e.DeviceDpiNew);
+        }
+
+        public void ApplyPalette(AppPalette next)
+        {
+            palette=next;
+            palette.ApplyCaption(this);
+            toolbar.BackColor=feedback.BackColor=next.Header;
+            foreach (var button in new[]{pin,snapshot,aspect,full})
+                StyleButton(button,button==pin ? Pinned : button==aspect && followAspect);
+        }
+
+        void StyleButton(Button button, bool active)
+        {
+            if (palette!=null) {
+                palette.StyleButton(button,active,!active);
+                return;
+            }
             button.ForeColor = active ? ActiveText : LightText;
             button.BackColor = active ? ActiveColor : ButtonColor;
             button.FlatAppearance.BorderColor = active ? Color.FromArgb(86,179,157) : ButtonEdge;
@@ -175,7 +230,7 @@ namespace MirrorDesk
             int other=TextRenderer.MeasureText("截图",Font).Width+icon+3*gap;
             int aspectWidth=TextRenderer.MeasureText(aspect.Text,Font).Width+icon+3*gap;
             int group=pinWidth+2*other+aspectWidth+3*gap, available=Math.Max(1,width-2*outer);
-            bool stacked=available<group+gap+TextRenderer.MeasureText("2732 × 2048   60 fps",stats.Font).Width;
+            bool stacked=available<group+gap+TextRenderer.MeasureText("2732 × 2048   120 fps",stats.Font).Width;
             bool doubleRow=available<group;
             int top=stacked ? stats.Font.Height+2*gap : gap;
             int height=top+h+gap+(doubleRow ? h+gap : 0);
@@ -193,12 +248,34 @@ namespace MirrorDesk
             return height;
         }
 
-        int MeasureToolbarHeight(int width) { return ArrangeToolbar(width,false); }
+        int MeasureToolbarHeight(int width) { return showToolbar && !IsFullscreen ? ArrangeToolbar(width,false) : 0; }
+
+        void UpdateToolbar()
+        {
+            if (IsDisposed || toolbar==null || !IsHandleCreated || !Visible) return;
+            if (IsFullscreen || WindowState==FormWindowState.Minimized) { SetToolbarVisible(false); return; }
+            Point mouse=PointToClient(Cursor.Position);
+            bool overTop=Form.ActiveForm==this && ClientRectangle.Contains(mouse) &&
+                mouse.Y < (toolbar.Visible ? toolbar.Height : Math.Max(7,Font.Height/2));
+            SetToolbarVisible(showToolbar || overTop);
+        }
+
+        void SetToolbarVisible(bool visible)
+        {
+            if (toolbar.Visible==visible) return;
+            toolbar.Visible=visible;
+            DisplayFeedback();
+        }
         void LayoutTools()
         {
-            if (layingOut || toolbar.ClientSize.Width<=0) return;
+            if (layingOut || toolbar==null || stage==null || ClientSize.Width<=0) return;
             layingOut=true;
-            try { toolbar.Height=ArrangeToolbar(toolbar.ClientSize.Width,true); }
+            try {
+                int width=ClientSize.Width;
+                toolbar.SetBounds(0,0,width,ArrangeToolbar(width,true));
+                int offset=MeasureToolbarHeight(width);
+                stage.SetBounds(0,offset,width,Math.Max(0,ClientSize.Height-offset));
+            }
             finally { layingOut=false; }
         }
 
@@ -257,13 +334,13 @@ namespace MirrorDesk
             stats.Text = snapshotMessage.Length==0 ? currentStats : snapshotMessage;
             tips.SetToolTip(stats,snapshotMessage);
             feedback.Text = snapshotMessage;
-            feedback.Visible = IsFullscreen && snapshotMessage.Length!=0;
+            feedback.Visible = !toolbar.Visible && snapshotMessage.Length!=0;
             if (feedback.Visible) { LayoutFeedback(); feedback.BringToFront(); }
         }
 
         void LayoutFeedback()
         {
-            if (!IsFullscreen || snapshotMessage.Length==0) return;
+            if (snapshotMessage.Length==0) return;
             int pad=Math.Max(8,feedback.Font.Height/2);
             int width=Math.Min(Math.Max(1,stage.ClientSize.Width-2*pad),
                 TextRenderer.MeasureText(snapshotMessage,feedback.Font).Width+2*pad);
@@ -282,6 +359,7 @@ namespace MirrorDesk
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (keyData==Keys.F8) { AlwaysShowToolbar=!AlwaysShowToolbar; return true; }
             if (keyData==(Keys.Control|Keys.R)) { ChangeAspectMode(); return true; }
             if (keyData == (Keys.Control | Keys.S))
             {
@@ -306,7 +384,6 @@ namespace MirrorDesk
                 {
                     FormBorderStyle = FormBorderStyle.Sizable;
                     Bounds = previousBounds;
-                    toolbar.Visible = true;
                     WindowState = previousState;
                     IsFullscreen = false;
                 }
@@ -322,7 +399,7 @@ namespace MirrorDesk
                     IsFullscreen = true;
                 }
             }
-            finally { ResumeLayout(true); arrangingWindow=false; DisplayFeedback(); }
+            finally { ResumeLayout(true); arrangingWindow=false; LayoutTools(); UpdateToolbar(); DisplayFeedback(); }
             FitIfPending(); RecordPlacement();
         }
 
@@ -349,6 +426,7 @@ namespace MirrorDesk
         protected override void Dispose(bool disposing)
         {
             if (disposing) {
+                toolbarTimer.Dispose();
                 feedbackTimer.Dispose();
                 tips.Dispose();
                 foreach (var button in new[] { pin, snapshot, aspect, full }) {

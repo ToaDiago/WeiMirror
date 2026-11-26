@@ -69,6 +69,12 @@ namespace MirrorDesk
             return radio;
         }
 
+        internal void ApplyPalette(AppPalette palette)
+        {
+            usb.Palette=air.Palette=palette;
+            usb.Invalidate(); air.Invalidate();
+        }
+
         protected override bool ProcessCmdKey(ref Message message, Keys key)
         {
             if (ContainsFocus && (key==Keys.Right || key==Keys.Left || key==Keys.Up || key==Keys.Down))
@@ -84,6 +90,7 @@ namespace MirrorDesk
         sealed class ModeChoice : Button
         {
             readonly bool wired;
+            public AppPalette Palette = new AppPalette(0,false);
             public bool Checked { get; private set; }
             public ModeChoice(bool wired)
             {
@@ -111,9 +118,9 @@ namespace MirrorDesk
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g=e.Graphics;
-                Color ink = Enabled ? (Checked ? ConsoleColors.Ink : ConsoleColors.Secondary) : SystemColors.GrayText;
-                Color fill = Checked ? ConsoleColors.Mint : Color.White;
-                Color line = Checked ? ConsoleColors.Accent : ConsoleColors.Line;
+                Color ink = Checked ? Palette.Ink : Palette.Muted;
+                Color fill = Checked ? Palette.Selection : Palette.Surface;
+                Color line = Checked ? Palette.Accent : Palette.Border;
                 using (var brush = new SolidBrush(fill)) g.FillRectangle(brush, ClientRectangle);
                 using (var pen = new Pen(line, Checked ? 2 : 1))
                     g.DrawRectangle(pen, 1, 1, Math.Max(0,Width-3), Math.Max(0,Height-3));
@@ -162,7 +169,7 @@ namespace MirrorDesk
                 g.SmoothingMode=SmoothingMode.AntiAlias;
                 g.TranslateTransform((ClientSize.Width-side)/2,(ClientSize.Height-side)/2);
                 g.ScaleTransform(side/44f,side/44f);
-                using (var bg=new SolidBrush(ConsoleColors.Accent))
+                using (var bg=new SolidBrush(Color.FromArgb(105,91,164)))
                 using (var monitor=new Pen(Color.White,2.2f))
                 using (var tablet=new Pen(Color.FromArgb(173,241,208),2.2f))
                 {
@@ -182,21 +189,51 @@ namespace MirrorDesk
         TableLayoutPanel dashboard, connection, utility;
         Panel viewport;
         bool compact, arranging, arrangePending;
+        DpiLayout consoleDpi;
+        int consoleDpiValue=96;
+        readonly ComboBox appearance = Picker();
+        readonly CheckBox darkMode = new CheckBox { Text="深色模式", Dock=DockStyle.Fill, Margin=Padding.Empty };
+        readonly CheckBox showToolbar = new CheckBox { Text="始终显示投屏工具栏", Dock=DockStyle.Fill, Margin=Padding.Empty };
+        AppPalette palette = new AppPalette(0,false);
+
+        void ChangeAppearance()
+        {
+            palette=new AppPalette(appearance.SelectedIndex,darkMode.Checked);
+            palette.Apply(this,primary);
+            UpdateDashboardStatus();
+            preview?.ApplyPalette(palette);
+        }
+
+        internal void ScaleConsole(int dpi)
+        {
+            consoleDpiValue=dpi;
+            if (!consoleDpi.Apply(dpi)) return;
+            var area=Screen.FromControl(this).WorkingArea;
+            MinimumSize=new Size(Math.Min(UiPixels(500),area.Width),Math.Min(UiPixels(310),area.Height));
+            ArrangeConsole(true);
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            if (consoleDpi!=null) ScaleConsole(e.DeviceDpiNew);
+        }
 
         void UpdateDashboardStatus()
         {
             string state = closing ? "正在退出" : WaitingForUsb ? "等待重连" : playing ? (hadVideo ? "投屏中" : "等待画面") : listening ? "等待设备" :
                 core == null ? "待配置" : "就绪";
-            if (sessionBadge.Text != state) {
-                sessionBadge.Text=state;
-                sessionBadge.BackColor=playing || listening ? ConsoleColors.Mint : Color.FromArgb(237,242,240);
-                sessionBadge.ForeColor=playing || listening ? Color.FromArgb(0,93,85) : ConsoleColors.Secondary;
-            }
+            sessionBadge.Text=state;
+            sessionBadge.BackColor=playing || listening ? palette.Selection : palette.Canvas;
+            sessionBadge.ForeColor=playing || listening ? palette.Accent : palette.Muted;
         }
 
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            palette.ApplyCaption(this);
+            ScaleConsole(DpiLayout.Read(this));
+            ClientSize=new Size(UiPixels(990),UiPixels(632));
             var area = Screen.FromControl(this).WorkingArea;
             MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width),Math.Min(MinimumSize.Height, area.Height));
             int width=Math.Min(Width,area.Width), height=Math.Min(Height,area.Height);
@@ -209,25 +246,22 @@ namespace MirrorDesk
         {
             SuspendLayout();
             Font=Theme.Font(14); ForeColor=ConsoleColors.Ink; BackColor=ConsoleColors.Canvas;
-            AutoScaleMode=AutoScaleMode.Dpi;
+            AutoScaleMode=AutoScaleMode.None;
             StartPosition=FormStartPosition.CenterScreen;
             MinimumSize=new Size(580,360); ClientSize = new Size(990,632);
 
-            var page=Theme.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,84,-1);
-            var header=Theme.Grid(4,1); Theme.Cols(header,54,98,-1,144); Theme.Rows(header,-1);
-            header.BackColor=ConsoleColors.Header;
+            var page=Theme.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,64,-1);
+            var header=Theme.Grid(4,1); Theme.Cols(header,46,76,-1,122); Theme.Rows(header,-1);
+            header.Name="Header";
             header.Padding=new Padding(24,0,24,0);
-            var logo=new BrandMark { Dock=DockStyle.Fill, Margin=new Padding(0,15,8,15), TabStop=false };
+            var logo=new BrandMark { Dock=DockStyle.Fill, Margin=new Padding(0,10,8,10), TabStop=false };
             header.Controls.Add(logo,0,0);
             header.Controls.Add(Theme.Label("微映",25,Color.White,true),1,0);
             header.Controls.Add(Theme.Label("投屏控制台",15,Color.FromArgb(187,217,210)),2,0);
-            about.Font=Theme.Font(13); about.Margin=new Padding(0,19,0,19);
-            about.BackColor=Color.FromArgb(43,71,75); about.ForeColor=Color.White;
-            about.FlatAppearance.BorderColor=Color.FromArgb(76,108,111);
-            about.FlatAppearance.MouseOverBackColor=Color.FromArgb(54,89,92);
+            about.Font=Theme.Font(13); about.Margin=new Padding(0,10,0,10);
             header.Controls.Add(about,3,0); page.Controls.Add(header,0,0);
 
-            viewport=new Panel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, BackColor=ConsoleColors.Canvas };
+            viewport=new Panel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, Name="Canvas" };
             dashboard=Theme.Grid(2,2); dashboard.Dock=DockStyle.Top;
             dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,62));
             dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,38));
@@ -237,7 +271,7 @@ namespace MirrorDesk
             viewport.Controls.Add(dashboard); page.Controls.Add(viewport,0,1);
             TrackConsoleFocus(dashboard);
             Controls.Add(page);
-            AutoScaleDimensions=new SizeF(96,96);
+            consoleDpi=new DpiLayout(this);
             ResumeLayout(true);
             viewport.ClientSizeChanged+=delegate {
                 // Changing the rows inside a scrollbar layout can leave its old scroll range in effect.
@@ -277,7 +311,7 @@ namespace MirrorDesk
 
         int UiPixels(int value)
         {
-            return (int)Math.Round(value * CurrentAutoScaleDimensions.Width / 96f);
+            return DpiLayout.Pixels(value,consoleDpiValue/96f);
         }
 
         void ArrangeConsole(bool force)
@@ -295,9 +329,9 @@ namespace MirrorDesk
                 // The two cards remain in the same visual/tab order across breakpoints.
                 dashboard.SetCellPosition(utility,stack ? new TableLayoutPanelCellPosition(0,1) : new TableLayoutPanelCellPosition(1,0));
                 dashboard.RowStyles[0].SizeType=SizeType.Absolute;
-                dashboard.RowStyles[0].Height=UiPixels(stack ? 490 : 498);
+                dashboard.RowStyles[0].Height=UiPixels(stack ? 490 : 506);
                 dashboard.RowStyles[1].SizeType=SizeType.Absolute;
-                dashboard.RowStyles[1].Height=stack ? UiPixels(480) : 0;
+                dashboard.RowStyles[1].Height=stack ? UiPixels(460) : 0;
                 connection.Margin=new Padding(0,0,stack ? 0 : UiPixels(14),0);
                 utility.Margin=new Padding(0,stack ? UiPixels(12) : 0,0,0);
                 dashboard.Height=dashboard.Padding.Vertical + (int)(dashboard.RowStyles[0].Height+dashboard.RowStyles[1].Height);
@@ -309,26 +343,26 @@ namespace MirrorDesk
         TableLayoutPanel Card()
         {
             var card=Theme.Grid(1,1);
-            card.BackColor=Color.White; card.Padding=new Padding(18,10,18,16);
+            card.Name="Card"; card.Padding=new Padding(18,10,18,16);
             return card;
         }
 
         TableLayoutPanel BuildConnectionCard()
         {
-            var card=Card(); card.RowCount=9; Theme.Cols(card,-1);
-            Theme.Rows(card,47,53,42,43,42,42,42,-1,49);
+            var card=Card(); card.RowCount=10; Theme.Cols(card,-1);
+            Theme.Rows(card,38,48,33,42,32,43,40,44,-1,46);
             card.Controls.Add(Theme.Label("连接设备",19,ConsoleColors.Ink,true),0,0);
             card.Controls.Add(mode,0,1);
 
             inputLabel.Font=presetLabel.Font=Theme.Font(13,true);
             inputLabel.ForeColor=presetLabel.ForeColor=ConsoleColors.Secondary;
             card.Controls.Add(inputLabel,0,2); card.Controls.Add(input,0,3);
-            quality.Items.AddRange(WirelessProfile.Choices); quality.SelectedIndex=0;
+            quality.Items.AddRange(WirelessProfile.Choices); quality.SelectedIndex=WirelessProfile.DefaultIndex;
             foreach (var picker in new[]{devices,quality}) {
                 picker.Font=Theme.Font(14); picker.ForeColor=ConsoleColors.Ink; picker.Dock=DockStyle.Top; picker.Margin=Padding.Empty;
             }
             name.Font=Theme.Font(14); input.Controls.Add(name);
-            var usbPick=Theme.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,88); Theme.Rows(usbPick,36);
+            var usbPick=Theme.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,88); Theme.Rows(usbPick,-1);
             usbPick.Controls.Add(devices,0,0); refresh.Margin=new Padding(8,0,0,0); usbPick.Controls.Add(refresh,1,0);
             input.Controls.Add(usbPick);
             card.Controls.Add(presetLabel,0,4);
@@ -337,24 +371,31 @@ namespace MirrorDesk
             usbMode.Name="UsbPreset"; presets.Controls.Add(usbMode); presets.Controls.Add(quality);
             card.Controls.Add(presets,0,5); card.Controls.Add(audio,0,6);
             audio.Font=Theme.Font(14); hint.Font=Theme.Font(13); hint.ForeColor=ConsoleColors.Secondary;
-            card.Controls.Add(hint,0,7);
+            appearance.Items.AddRange(AppPalette.Names); appearance.SelectedIndex=0;
+            appearance.Name="AppearanceTheme"; appearance.AccessibleName="界面主题"; appearance.FlatStyle=FlatStyle.Flat; appearance.Dock=DockStyle.Top;
+            appearance.Font=darkMode.Font=showToolbar.Font=Theme.Font(12);
+            appearance.Margin=new Padding(0,4,8,0);
+            var style=Theme.Grid(3,1); Theme.Cols(style,118,110,-1); Theme.Rows(style,-1);
+            style.Controls.Add(appearance,0,0); style.Controls.Add(darkMode,1,0); style.Controls.Add(showToolbar,2,0);
+            card.Controls.Add(style,0,7);
+            hint.Name="Muted"; card.Controls.Add(hint,0,8);
             primary.Font=Theme.Font(14,true); primary.BackColor=ConsoleColors.Accent;
             primary.FlatAppearance.BorderColor=ConsoleColors.Accent;
-            card.Controls.Add(primary,0,8);
+            card.Controls.Add(primary,0,9);
             return card;
         }
 
         TableLayoutPanel BuildUtilityColumn()
         {
-            var tools=Theme.Grid(1,2); Theme.Cols(tools,-1); Theme.Rows(tools,200,-1);
-            var session=Card(); session.RowCount=3; Theme.Cols(session,-1); Theme.Rows(session,43,-1,41);
+            var tools=Theme.Grid(1,2); Theme.Cols(tools,-1); Theme.Rows(tools,178,-1);
+            var session=Card(); session.RowCount=3; Theme.Cols(session,-1); Theme.Rows(session,39,-1,43);
             var heading=Theme.Grid(2,1); Theme.Cols(heading,-1,88); Theme.Rows(heading,-1);
             heading.Controls.Add(Theme.Label("接收状态",17,ConsoleColors.Ink,true),0,0);
             sessionBadge.TextAlign=ContentAlignment.MiddleCenter;
             sessionBadge.Margin=new Padding(0,6,0,6);
             heading.Controls.Add(sessionBadge,1,0); session.Controls.Add(heading,0,0);
             footer.Font=Theme.Font(13); footer.ForeColor=ConsoleColors.Secondary;
-            footer.UseMnemonic=false; session.Controls.Add(footer,0,1);
+            footer.Name="Muted"; footer.UseMnemonic=false; session.Controls.Add(footer,0,1);
             session.Controls.Add(showPreview,0,2);
             session.Margin=new Padding(0,0,0,12);
             tools.Controls.Add(session,0,0);

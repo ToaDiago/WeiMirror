@@ -241,17 +241,16 @@ static class GuiQA
     static void VerifyRotation(Form win) {
         Panel video=Surface(win);
         IntPtr target=video.Handle;
-        var follow=(Button)Named(win,"FollowAspect");
         FixtureSupport.VideoWidth=1080; FixtureSupport.VideoHeight=1920;
         Until(()=>StatText().Contains("1080 × 1920") && video.Height>video.Width,"portrait geometry after rotated native frame");
         Check(video.Handle==target && Math.Abs((double)video.Width/video.Height-9d/16)<0.09,
             "real polling fits the portrait video surface without recreating its native HWND");
-        follow.PerformClick();
+        Key(win,Keys.Control|Keys.R);
         Rectangle fixedBounds=win.Bounds;
         FixtureSupport.VideoWidth=1920; FixtureSupport.VideoHeight=1080;
         Until(()=>StatText().Contains("1920 × 1080"),"landscape frame arrives with fitting disabled");
         Check(win.Bounds==fixedBounds && FixtureSupport.Attached==target,"manual-size mode leaves window bounds alone on rotation");
-        follow.PerformClick();
+        Key(win,Keys.Control|Keys.R);
         Until(()=>video.Width>video.Height,"re-enabling aspect follows current landscape frame");
         Key(win,Keys.F11);
         Rectangle fullscreen=win.Bounds;

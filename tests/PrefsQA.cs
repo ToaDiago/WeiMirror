@@ -17,7 +17,7 @@ internal static class PrefsQA
 
     static bool Defaults(UserPreferences p)
     {
-        return !p.Wireless && !p.AlwaysOnTop && p.PlayAudio && p.QualityIndex == 0 && p.ReceiverName == "WeiMirror";
+        return !p.Wireless && !p.AlwaysOnTop && p.PlayAudio && p.QualityIndex == WirelessProfile.DefaultIndex && p.ReceiverName == "WeiMirror";
     }
 
     static bool Custom(UserPreferences p)
@@ -56,23 +56,28 @@ internal static class PrefsQA
             Check(Custom(store.Load()), "unknown settings and malformed lines leave existing fields intact");
             File.WriteAllText(file, "transport=airplay\naudio=false\nname=旧配置\n", new UTF8Encoding(true));
             var old = store.Load();
-            Check(old.Wireless && !old.PlayAudio && old.ReceiverName == "旧配置" && !old.AlwaysOnTop && old.QualityIndex == 0,
+            Check(old.Wireless && !old.PlayAudio && old.ReceiverName == "旧配置" && !old.AlwaysOnTop && old.QualityIndex == WirelessProfile.DefaultIndex,
                 "missing fields in older BOM-encoded configuration get defaults");
-            var previousHeights = new[] {1080,720,540};
+            var previousHeights = new[] {2880,720,540};
             var previousRates = new[] {60,30,30};
             for (int index=0; index<previousHeights.Length; index++) {
                 File.WriteAllText(file,"format=1\nquality="+index+"\n");
                 var previous=WirelessProfile.Choices[store.Load().QualityIndex];
                 Check(previous.Height==previousHeights[index] && previous.Fps==previousRates[index],
-                    "1.2 saved profile still maps to "+previous);
+                    "migration maps previous quality "+index+" to "+previous);
             }
+            Check(store.TrySave(new UserPreferences { QualityIndex=0, ThemeIndex=1, DarkMode=true, AlwaysShowToolbar=true }),
+                "saves explicit 1080p60 and appearance preferences");
+            var appearance=store.Load();
+            Check(appearance.QualityIndex==0 && appearance.ThemeIndex==1 && appearance.DarkMode && appearance.AlwaysShowToolbar,
+                "new format preserves explicitly selected 1080p60, Space, dark mode and toolbar choice");
             const string placement="1|DISPLAY1|210|110|980|560";
             Check(store.TrySave(new UserPreferences { QualityIndex=3, PreviewLayout=placement }) &&
                   store.Load().QualityIndex==3 && store.Load().PreviewLayout==placement &&
                   WirelessProfile.Choices[3].Height==720 && WirelessProfile.Choices[3].Fps==60,
                   "new 720p60 profile and preview placement reload");
             Check(store.TrySave(new UserPreferences { PreviewLayout="bad\nquality=3" }) &&
-                  store.Load().QualityIndex==0 && String.IsNullOrEmpty(store.Load().PreviewLayout),
+                  store.Load().QualityIndex==WirelessProfile.DefaultIndex && String.IsNullOrEmpty(store.Load().PreviewLayout),
                   "invalid placement cannot inject another preference");
             Check(store.TrySave(new UserPreferences { PreviewLayout=new String('x',513) }) &&
                   String.IsNullOrEmpty(store.Load().PreviewLayout),"oversized placement is ignored");

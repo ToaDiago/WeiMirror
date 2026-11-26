@@ -60,7 +60,11 @@ namespace MirrorDesk
                     System.Security.AccessControl.EventWaitHandleRights.Synchronize))
                 using (var output=AirPlayHostPipe.Connect(pipe)) {
                     if (parent.HasExited || stopEvent.WaitOne(0)) return 0;
-                    ConfigureReceiver(name);
+                    string selection=Environment.GetEnvironmentVariable(MirrorCore.AirPlayProfileIndex);
+                    int index=3;
+                    if (selection!=null && (!Int32.TryParse(selection,NumberStyles.None,CultureInfo.InvariantCulture,out index) ||
+                        index>=WirelessProfile.Choices.Length || !WirelessProfile.Choices[index].UsesCustomHost)) return 2;
+                    ConfigureReceiver(name,WirelessProfile.Choices[index]);
                     return Serve(libraryPath,name,output,stopEvent,parent);
                 }
             } catch (Exception) { return 3; }
@@ -94,7 +98,7 @@ namespace MirrorDesk
             catch (ArgumentException) { return false; }
         }
 
-        static void ConfigureReceiver(string receiverName)
+        static void ConfigureReceiver(string receiverName,WirelessProfile profile)
         {
             // Same stable identity and key seed as the stock host, so switching profile
             // retains pairing. Width, height, maxFPS and refreshRate go into the /info plist.
@@ -107,9 +111,9 @@ namespace MirrorDesk
             using (var sha=SHA256.Create())
                 seed=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(deviceId+"iPhoneMirror AirPlay pairing identity v1")))
                     .Replace("-","").ToLowerInvariant();
-            Environment.SetEnvironmentVariable(CapabilityPrefix+"WIDTH","1280");
-            Environment.SetEnvironmentVariable(CapabilityPrefix+"HEIGHT","720");
-            Environment.SetEnvironmentVariable(CapabilityPrefix+"FPS","60");
+            Environment.SetEnvironmentVariable(CapabilityPrefix+"WIDTH",profile.Width.ToString(CultureInfo.InvariantCulture));
+            Environment.SetEnvironmentVariable(CapabilityPrefix+"HEIGHT",profile.Height.ToString(CultureInfo.InvariantCulture));
+            Environment.SetEnvironmentVariable(CapabilityPrefix+"FPS",profile.Fps.ToString(CultureInfo.InvariantCulture));
             Environment.SetEnvironmentVariable(CapabilityPrefix+"MODE","mirror");
             Environment.SetEnvironmentVariable(CapabilityPrefix+"NAME",receiverName);
             Environment.SetEnvironmentVariable(CapabilityPrefix+"DEVICE_ID",deviceId);

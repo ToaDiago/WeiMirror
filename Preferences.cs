@@ -13,7 +13,10 @@ namespace MirrorDesk
         public bool Wireless { get; set; }
         public bool PlayAudio { get; set; } = true;
         public bool AlwaysOnTop { get; set; }
-        public int QualityIndex { get; set; }
+        public int QualityIndex { get; set; } = WirelessProfile.DefaultIndex;
+        public int ThemeIndex { get; set; }
+        public bool DarkMode { get; set; }
+        public bool AlwaysShowToolbar { get; set; }
         public string ReceiverName { get; set; } = "WeiMirror";
         public string PreviewLayout { get; set; } = "";
     }
@@ -52,6 +55,7 @@ namespace MirrorDesk
                     using (var reader = new StreamReader(file, Utf8, true))
                     {
                         string line;
+                        bool legacy=true;
                         while ((line = reader.ReadLine()) != null)
                         {
                             int separator = line.IndexOf('=');
@@ -61,6 +65,19 @@ namespace MirrorDesk
                             int index;
                             switch (line.Substring(0, separator).Trim())
                             {
+                                case "format":
+                                    legacy=value!="2";
+                                    break;
+                                case "theme":
+                                    if (Int32.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out index) && index<4)
+                                        prefs.ThemeIndex=index;
+                                    break;
+                                case "dark":
+                                    if (Boolean.TryParse(value,out flag)) prefs.DarkMode=flag;
+                                    break;
+                                case "toolbar":
+                                    if (Boolean.TryParse(value,out flag)) prefs.AlwaysShowToolbar=flag;
+                                    break;
                                 case "transport":
                                     if (value == "airplay" || value == "usb") prefs.Wireless = value == "airplay";
                                     break;
@@ -82,6 +99,7 @@ namespace MirrorDesk
                                     break;
                             }
                         }
+                        if (legacy && prefs.QualityIndex==0) prefs.QualityIndex=WirelessProfile.DefaultIndex;
                     }
                 }
                 return prefs;
@@ -121,9 +139,12 @@ namespace MirrorDesk
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 File.WriteAllLines(temp, new[] {
-                    "format=1",
+                    "format=2",
+                    "theme=" + prefs.ThemeIndex.ToString(CultureInfo.InvariantCulture),
+                    "dark=" + prefs.DarkMode,
+                    "toolbar=" + prefs.AlwaysShowToolbar,
                     "transport=" + (prefs.Wireless ? "airplay" : "usb"),
-                    "quality=" + (ValidQuality(prefs.QualityIndex) ? prefs.QualityIndex : 0).ToString(CultureInfo.InvariantCulture),
+                    "quality=" + (ValidQuality(prefs.QualityIndex) ? prefs.QualityIndex : WirelessProfile.DefaultIndex).ToString(CultureInfo.InvariantCulture),
                     "audio=" + prefs.PlayAudio,
                     "topmost=" + prefs.AlwaysOnTop,
                     "name=" + SafeName(prefs.ReceiverName),

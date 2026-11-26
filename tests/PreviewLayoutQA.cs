@@ -16,7 +16,11 @@ internal static class PreviewLayoutQA
         var s=win.Surface.ClientSize;
         return s.Height>0 && Math.Abs((double)s.Width/s.Height-ratio)<.012;
     }
-    static Button Aspect(PreviewWindow win) { return (Button)win.Controls.Find("FollowAspect",true)[0]; }
+    static void ToggleAspect(PreviewWindow win) {
+        var key=Message.Create(win.Handle,0x100,(IntPtr)(int)(Keys.Control|Keys.R),IntPtr.Zero);
+        typeof(PreviewWindow).GetMethod("ProcessCmdKey",BindingFlags.Instance|BindingFlags.NonPublic)
+            .Invoke(win,new object[]{key,Keys.Control|Keys.R});
+    }
     static void ResizeEvent(PreviewWindow win,string name) {
         typeof(PreviewWindow).GetMethod(name,BindingFlags.Instance|BindingFlags.NonPublic).Invoke(win,new object[]{EventArgs.Empty});
     }
@@ -53,7 +57,7 @@ internal static class PreviewLayoutQA
                 w.SetVideoSize(1280,720);w.SetVideoSize(1280,720);Application.DoEvents();
                 Check(w.Bounds==initial && events==before,"same aspect updates do not move the window or write preferences");
                 w.SetVideoSize(1080,1920);Application.DoEvents();
-                Check(Ratio(w,9/16.0) && work.Contains(w.Bounds) && w.Width<initial.Width && w.Surface.Handle==hwnd,"rotation fits portrait while retaining native surface and visible toolbar");
+                Check(Ratio(w,9/16.0) && work.Contains(w.Bounds) && w.Width<initial.Width && w.Surface.Handle==hwnd,"rotation fits portrait while retaining the native surface");
                 w.SetVideoSize(1920,1080);Application.DoEvents();
                 Check(Math.Abs(w.Width-initial.Width)<2 && Math.Abs(w.Height-initial.Height)<2,"repeated rotations retain original viewing area");
                 ResizeEvent(w,"OnResizeBegin"); w.Size=new Size(Math.Min(760,work.Width),Math.Min(500,work.Height));
@@ -76,7 +80,7 @@ internal static class PreviewLayoutQA
                 Check(w.WindowState==FormWindowState.Maximized && w.Bounds==max,"maximized window stays maximized during rotation");
                 w.WindowState=FormWindowState.Normal;Application.DoEvents();
                 Check(Ratio(w,9/16.0),"restoring a maximized window applies pending portrait frame");
-                Aspect(w).PerformClick();normal=w.Bounds;
+                ToggleAspect(w);normal=w.Bounds;
                 w.SetVideoSize(1920,1080);Application.DoEvents();
                 Check(normal==w.Bounds && !PreviewPlacement.Decode(w.CapturePreviewLayout()).Follow,"opt-out retains fixed size after rotation");
                 w.Bounds=new Rectangle(work.Left+18,work.Top+26,Math.Min(work.Width-30,630),Math.Min(work.Height-42,468));

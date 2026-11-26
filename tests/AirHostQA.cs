@@ -124,12 +124,13 @@ static class AirHostQA
         }
         throw new InvalidDataException("Missing expected native message");
     }
-    static void Wire(Stream pipe,EventWaitHandle step,string prefix,string receiver)
+    static void Wire(Stream pipe,EventWaitHandle step,string prefix,string receiver,string profile)
     {
         PacketOf(pipe,1);
         var advertised=File.ReadAllLines(prefix+".advert");
-        Check(advertised.SequenceEqual(new[]{"1280","720","60","mirror",receiver,receiver,"5001","7001"}),
-            "SDK receives 1280x720 at 60 fps, UTF-8 name and both mirroring ports despite stock core carrier at 30 fps");
+        string[] expected=profile.Split('x');
+        Check(advertised.SequenceEqual(new[]{expected[0],expected[1],expected[2],"mirror",receiver,receiver,"5001","7001"}),
+            "SDK receives " + profile + ", UTF-8 name and both mirroring ports despite stock core carrier at 30 fps");
         step.Set(); var connected=PacketOf(pipe,2);
         Check(connected.Text(104,64)=="QA-13-device" && connected.Text(168,128)=="测试 iPad","connected IPC carries exact device identity and UTF-8 peer name");
         step.Set(); var video=PacketOf(pipe,4);
@@ -152,8 +153,10 @@ static class AirHostQA
         File.AppendAllText(receipt,"returned "+code+"\n");
         return code;
     }
-    static void Run(string app,string sdk,bool valid,bool disconnectPipe=false)
+    static void Run(string app,string sdk,string scenario)
     {
+        bool valid=scenario!="no-key", disconnectPipe=scenario=="pipe-loss";
+        string profile=scenario=="1080p120" ? "1920x1080x120" : scenario=="2k60" ? "2560x1440x60" : "1280x720x60";
         string unique=Guid.NewGuid().ToString("B");
         string suffix=Process.GetCurrentProcess().Id+"-"+unique, receiver="同步 iPad";
         string pipeName="iPhoneMirror-AirPlay-Hub-"+suffix, stop="Local\\iPhoneMirror-AirPlay-Hub-Stop-"+suffix;
@@ -167,6 +170,7 @@ static class AirHostQA
         options.EnvironmentVariables["WEIMIRROR_QA_IPC_STEP"]=stepName;
         options.EnvironmentVariables["WEIMIRROR_QA_NO_PUBLIC_KEY"]=valid ? "0":"1";
         options.EnvironmentVariables.Remove("IPHONE_MIRROR_AIRPLAY_PUBLIC_KEY");
+        options.EnvironmentVariables["WEIMIRROR_AIRPLAY_PROFILE"]=scenario=="1080p120" ? "4" : scenario=="2k60" ? "5" : "3";
         using(var pipe=new NamedPipeServerStream(pipeName,PipeDirection.InOut,1,PipeTransmissionMode.Byte,PipeOptions.Asynchronous))
         using(var stopEvent=new EventWaitHandle(false,EventResetMode.ManualReset,stop))
         using(var step=new EventWaitHandle(false,EventResetMode.AutoReset,stepName))
@@ -179,7 +183,7 @@ static class AirHostQA
                 if (!connection.IsCompleted) throw new IOException("SDK host never connected. Exit="+(child.HasExited ? child.ExitCode.ToString() : "running"));
                 connection.GetAwaiter().GetResult();
                 Task traffic=Task.Run(()=>{
-                    if(valid) Wire(pipe,step,prefix,receiver);
+                    if(valid) Wire(pipe,step,prefix,receiver,profile);
                     else {
                         try { PacketOf(pipe,1); throw new Exception("Host reported ready without public key"); }
                         catch(EndOfStreamException) {}
@@ -210,7 +214,7 @@ static class AirHostQA
         int result=0;
         try {
             if(args[0]=="--child") result=Child(args);
-            else if(args.Length==3) Run(args[0],args[1],args[2]!="no-key",args[2]=="pipe-loss");
+            else if(args.Length==3) Run(args[0],args[1],args[2]);
             else throw new ArgumentException("Requires app, SDK fixture and scenario.");
         }
         catch(Exception ex) {Console.Error.WriteLine(ex);result=1;}

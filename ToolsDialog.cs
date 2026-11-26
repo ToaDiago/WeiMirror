@@ -6,18 +6,22 @@ namespace MirrorDesk
 {
     internal sealed class ToolsDialog : Form
     {
-        public ToolsDialog()
+        readonly DpiLayout dpiLayout;
+        readonly AppPalette palette;
+
+        public ToolsDialog() : this(new AppPalette(0,false)) {}
+        public ToolsDialog(AppPalette palette)
         {
+            this.palette=palette;
             Text = "工具与关于 · 微映";
             StartPosition = FormStartPosition.CenterParent;
             Font = Theme.Font(13);
-            AutoScaleDimensions = new SizeF(96,96);
-            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleMode = AutoScaleMode.None;
             ClientSize = new Size(620,450);
             MinimumSize = new Size(400,280);
             BackColor = ConsoleColors.Canvas;
             MinimizeBox = MaximizeBox = false;
-            var scroll = new Panel { Dock=DockStyle.Fill, AutoScroll=true };
+            var scroll = new Panel { Dock=DockStyle.Fill, AutoScroll=true, Name="Canvas" };
             var grid = Theme.Grid(1,8);
             grid.Dock = DockStyle.Top;
             grid.Height = 470;
@@ -35,7 +39,7 @@ namespace MirrorDesk
             save.Click+=delegate { BundledFiles.Export(this,true); };
             grid.Controls.Add(open,0,2);
             grid.Controls.Add(save,0,3);
-            grid.Controls.Add(Theme.Label("微映  1.3",18,ConsoleColors.Ink,true),0,4);
+            grid.Controls.Add(Theme.Label("微映  1.4",18,ConsoleColors.Ink,true),0,4);
             grid.Controls.Add(Theme.Label("Windows USB 与 AirPlay 投屏接收端，使用 iPhoneMirror v1.8.3 组件。程序附有完整源码、构建脚本和 GPL-3.0-only 许可证。",13,ConsoleColors.Secondary),0,5);
             var source=Theme.Button("导出完整源码 ZIP…");
             source.Name="ExportSource";
@@ -57,6 +61,27 @@ namespace MirrorDesk
             grid.Controls.Add(author,0,7);
             scroll.Controls.Add(grid);
             Controls.Add(scroll);
+            palette.Apply(this,open);
+            dpiLayout=new DpiLayout(this);
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            palette.ApplyCaption(this);
+            int dpi=DpiLayout.Read(this);
+            dpiLayout.Apply(dpi);
+            var area=Screen.FromControl(Owner ?? this).WorkingArea;
+            ClientSize=new Size(Math.Min(area.Width-20,DpiLayout.Pixels(620,dpi/96f)),
+                Math.Min(area.Height-50,DpiLayout.Pixels(450,dpi/96f)));
+            Location=new Point(Math.Max(area.Left,Math.Min(Left,area.Right-Width)),
+                Math.Max(area.Top,Math.Min(Top,area.Bottom-Height)));
+        }
+
+        protected override void OnDpiChanged(DpiChangedEventArgs e)
+        {
+            base.OnDpiChanged(e);
+            dpiLayout?.Apply(e.DeviceDpiNew);
         }
     }
 }

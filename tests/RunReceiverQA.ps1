@@ -5,7 +5,7 @@ $BuildRoot = [IO.Path]::GetFullPath($BuildRoot)
 $runtime = Join-Path $BuildRoot 'fixture-runtime'
 $wireless = Join-Path $runtime 'Wireless'
 New-Item -Force -ItemType Directory $wireless | Out-Null
-$project = Join-Path $PSScriptRoot '..\project'
+$project = Split-Path -Parent $PSScriptRoot
 $compile = Join-Path $PSScriptRoot 'Compile.ps1'
 $support = Join-Path $BuildRoot FixtureSupport.dll
 & $compile -Name FixtureSupport -Sources (Join-Path $PSScriptRoot 'FixtureSupport.cs') -Out $support -Library
@@ -85,8 +85,8 @@ if ($ApplicationExe) {
     $sdkFixture = Join-Path $BuildRoot 'AirFixture.dll'
     & $asm /QUIET /DLL /X64 /PE64 "/OUTPUT:$sdkFixture" (Join-Path $PSScriptRoot 'SdkExports.il')
     if ($LASTEXITCODE) { throw "SDK fixture assembly failed with $LASTEXITCODE" }
-    foreach ($scenario in 'normal','no-key','pipe-loss') {
+    foreach ($scenario in 'normal','no-key','pipe-loss','1080p120','2k60') {
         & $airHostTest ([IO.Path]::GetFullPath($ApplicationExe)) $sdkFixture $scenario
-        if ($LASTEXITCODE) { throw "720p60 host integration failed for $scenario with $LASTEXITCODE" }
+        if ($LASTEXITCODE) { throw "AirPlay host integration failed for $scenario with $LASTEXITCODE" }
     }
 }

@@ -18,14 +18,26 @@ namespace MirrorDesk
         // The first three positions are persisted by 1.2 and sent to its worker process.
         internal static readonly WirelessProfile[] Choices = {
             new WirelessProfile(1920,1080,60), new WirelessProfile(1280,720,30),
-            new WirelessProfile(960,540,30), new WirelessProfile(1280,720,60)
+            new WirelessProfile(960,540,30), new WirelessProfile(1280,720,60,true),
+            new WirelessProfile(1920,1080,120,true), new WirelessProfile(2560,1440,60,true),
+            new WirelessProfile(5120,2880,60)
         };
+        internal const int DefaultIndex = 6;
         internal readonly int Width, Height, Fps;
-        WirelessProfile(int width,int height,int fps) { Width=width; Height=height; Fps=fps; }
-        internal bool Uses720Host { get { return Width==1280 && Height==720 && Fps==60; } }
+        internal readonly bool UsesCustomHost;
+        WirelessProfile(int width,int height,int fps,bool customHost=false)
+        {
+            Width=width; Height=height; Fps=fps; UsesCustomHost=customHost;
+        }
+        internal static WirelessProfile Find(int width,int height,int fps)
+        {
+            return Array.Find(Choices,p=>p.Width==width && p.Height==height && p.Fps==fps);
+        }
         public override string ToString()
         {
-            return Height + "p · " + Fps + " fps" + (Uses720Host ? "（试验）" : "");
+            if (Height==2880) return "高清自动 · 60 fps（推荐）";
+            string resolution = Height==1440 ? "2K (1440p)" : Height + "p";
+            return resolution + " · " + Fps + " fps" + (UsesCustomHost ? "（试验）" : "");
         }
     }
 
@@ -33,6 +45,7 @@ namespace MirrorDesk
     {
         private const string HostFile = "iPhoneMirror.WirelessHost.exe";
         internal const string AirPlay720Directory = "WEIMIRROR_720_RECEIVER_DIRECTORY";
+        internal const string AirPlayProfileIndex = "WEIMIRROR_AIRPLAY_PROFILE";
         private static readonly string[] WirelessRuntimeFiles = {
             "airplay2dll.dll", "avcodec-58.dll", "avutil-56.dll",
             "dnssd.dll", "swresample-3.dll", "swscale-5.dll"
@@ -54,13 +67,15 @@ namespace MirrorDesk
 
         public void StartWireless(string receiverName)
         {
-            StartWireless(receiverName, 1920, 1080, 60);
+            var profile=WirelessProfile.Choices[WirelessProfile.DefaultIndex];
+            StartWireless(receiverName,profile.Width,profile.Height,profile.Fps);
         }
 
         public void StartWireless(string receiverName, int width, int height, int fps)
         {
             string name = ValidateReceiverName(receiverName);
-            if (!IsWirelessProfile(width, height, fps))
+            var profile=WirelessProfile.Find(width,height,fps);
+            if (profile==null)
                 throw new ArgumentException("请选择支持的 AirPlay 分辨率和帧率。");
 
             lock (gate)
@@ -81,16 +96,20 @@ namespace MirrorDesk
                 }
                 if (previous != WirelessState.Off) StopWirelessLocked();
 
-                if (width == 1280 && height == 720 && fps == 60) {
-                    // Core v1.8.3 uses this capability only to build the child's command line.
-                    // Its 720p carrier must be 30. Our dedicated host offers 60 to the real SDK,
-                    // and the separately created capture session consumes up to 60 fps.
+                if (profile.UsesCustomHost) {
+                    // The core accepts a fixed set of profiles. The child owns the actual SDK advertisement.
                     string inherited = Environment.GetEnvironmentVariable(AirPlay720Directory);
+                    string inheritedProfile = Environment.GetEnvironmentVariable(AirPlayProfileIndex);
                     try {
                         Environment.SetEnvironmentVariable(AirPlay720Directory, directory);
+                        Environment.SetEnvironmentVariable(AirPlayProfileIndex,
+                            Array.IndexOf(WirelessProfile.Choices,profile).ToString(System.Globalization.CultureInfo.InvariantCulture));
                         Check(im_wireless_receiver_start_ex(name, typeof(MirrorCore).Assembly.Location,
-                            1280,720,30), "启动 720p60 AirPlay 接收");
-                    } finally { Environment.SetEnvironmentVariable(AirPlay720Directory, inherited); }
+                            1280,720,30), "启动 " + profile + " AirPlay 接收");
+                    } finally {
+                        Environment.SetEnvironmentVariable(AirPlay720Directory,inherited);
+                        Environment.SetEnvironmentVariable(AirPlayProfileIndex,inheritedProfile);
+                    }
                 } else {
                     Check(im_wireless_receiver_start_ex(name, host, (uint)width, (uint)height,
                         (uint)fps), "启动 AirPlay 接收");
@@ -122,6 +141,7 @@ namespace MirrorDesk
             {
                 im_wireless_receiver_stop();
                 wirelessName = null;
+                wirelessFps = 0;
                 wirelessStartup.Reset();
             }
         }
@@ -157,9 +177,7 @@ namespace MirrorDesk
 
         internal static bool IsWirelessProfile(int width, int height, int fps)
         {
-            foreach (var profile in WirelessProfile.Choices)
-                if (width==profile.Width && height==profile.Height && fps==profile.Fps) return true;
-            return width==5120 && height==2880 && fps==60;
+            return WirelessProfile.Find(width,height,fps)!=null;
         }
 
         internal static string ValidateReceiverName(string name)
