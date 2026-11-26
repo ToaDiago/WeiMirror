@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>微映 · 投屏延迟测试</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; color: #17383e; background: #edf4f1; font: 1rem/1.65 system-ui, "Microsoft YaHei", sans-serif; }
+main { max-width: 64rem; margin: 0 auto; padding: 1.25rem; }
+h1, h2, p { margin: 0; }
+h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); font-weight: 700; }
+h2 { margin-bottom: .4rem; font-size: 1.3rem; }
+header, section { margin-bottom: 1rem; }
+header { padding: .45rem 0; }
+.clock { color: #f3fff9; background: #18363b; border-radius: 1rem; padding: clamp(1rem, 4vw, 2.25rem); text-align: center; }
+.clock label { display: block; color: #b5dbd1; }
+#clock { display: block; font: 700 clamp(2.2rem, 12vw, 7.5rem)/1.35 ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.035em; }
+button { border: 1px solid #a8c9bd; border-radius: .45rem; padding: .48rem 1rem; font: inherit; color: #173c37; background: #e1f3e9; cursor: pointer; }
+button:focus-visible, textarea:focus-visible { outline: 3px solid #008479; outline-offset: 2px; }
+.card { background: white; padding: clamp(1rem, 3vw, 1.65rem); border-radius: .85rem; }
+ol { margin: .4rem 0 0; padding-left: 1.45rem; } li { margin: .35rem 0; }
+.note { color: #405e5d; }
+code { overflow-wrap: anywhere; }
+details { margin-top: .65rem; } summary { color: #066a60; cursor: pointer; font-weight: 650; }
+.rows { margin-top: .75rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18.5rem), 1fr)); gap: .75rem; }
+.samples { border: 1px solid #cddfd9; border-radius: .5rem; padding: .75rem; min-width: 0; }
+.samples label { display: block; font-weight: 650; }
+textarea { width: 100%; min-height: 3.3rem; display: block; margin: .4rem 0; border: 1px solid #9eb8b0; border-radius: .25rem; padding: .4rem; font: inherit; resize: vertical; }
+.result { display: block; color: #165e53; font-variant-numeric: tabular-nums; }
+.error { color: #943b29; }
+body.focus { background: #18363b; }
+body.focus main { max-width: none; padding: 0; }
+body.focus header, body.focus .card { display: none; }
+body.focus .clock { min-height: 100vh; min-height: 100dvh; margin: 0; border-radius: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+body.focus #clock { font-size: min(19vw, 50vh); }
+</style>
+</head>
+<body>
+<main>
+<header><h1>投屏延迟测试</h1></header>
+<section class="clock" aria-label="拍摄用计时器">
+  <label for="clock">iPad 画面时间（毫秒）</label>
+  <output id="clock" aria-live="off">0000000</output>
+  <button id="focus" type="button" aria-pressed="false">只显示计时器</button>
+  <noscript><p>当前预览不支持运行计时器。可在 iPad 上使用系统秒表，回到电脑上的本页记录读数。</p></noscript>
+</section>
+<section class="card">
+<h2>拍摄与读数</h2>
+<ol>
+  <li>在 iPad 上打开本页并确认数字在动，点「只显示计时器」，然后开始投屏。电脑显示微映接收到的同一组数字。</li>
+  <li>把 iPad 和电脑屏幕并排，数字尽量放在相同高度。用第三台设备以 120 或 240 fps 同时拍到两块屏幕，保持机位固定。</li>
+  <li>每种连接先运行 2 分钟，拍一段至少 20 秒的视频，每隔约 1 秒选一个两边读数都清晰的画面。用该画面中 <strong>iPad 毫秒数减去电脑毫秒数</strong>。例如 0182534 − 0182451 = 83 ms。遇到数字换帧重影，选相邻清晰帧。</li>
+  <li>保持本次连接，到 30 分钟时再拍一段。使用同一台 iPad、电脑、相机和屏幕设置，分别测 USB、无线 1080p60，以及实际能选的 720p 档位。比较无线档位时保持网络与设备位置一致。</li>
+</ol>
+<p class="note">结果表示两块屏幕显示同一计时画面的时间差。读数受屏幕刷新和相机采样影响，毫秒位数只是显示精度。这一方法不包含手指触摸到 iPad 画面变化的时间。</p>
+<details><summary>怎样在 iPad 打开计时器？</summary>
+<p>可以将导出的 HTML 放到自己的静态网站，用 iPad 的 Safari 打开。也可以在电脑新建只放这个 HTML 的文件夹；如已安装 Python，在该文件夹中运行 <code>py -m http.server 8000 --bind 电脑的局域网IPv4地址</code>，把命令中的地址换成实际数字。让 iPad 连接同一局域网，在 Safari 打开 <code>http://电脑的局域网IPv4地址:8000/</code> 并点选该文件。测试结束在电脑上按 Ctrl+C 关闭服务。</p>
+<p>若 iPad 的「文件」只显示静态预览，直接在 iPad 的「时钟」里启动秒表，电脑上仍用此页记录差值。若秒表只显示到百分之一秒，每格按 10 ms 换算。</p>
+</details>
+</section>
+<section class="card">
+<h2>记录各组差值</h2>
+<p>每格粘贴一组以毫秒计的差值，用空格、逗号或换行分隔。每组建议至少 20 个。中位数表示典型延迟，P95 取排序后第 ⌈样本数 × 0.95⌉ 个值。720p60 仅在接收端和设备支持时测。</p>
+<div id="samples" class="rows"></div>
+<p id="storage" class="note"></p>
+</section>
+</main>
+<script>
+"use strict";
+const clock = document.getElementById("clock");
+const focusButton = document.getElementById("focus");
+const startTime = performance.now();
+function tick() {
+  clock.textContent = String(Math.max(0, Math.floor(performance.now() - startTime))).padStart(7, "0");
+  window.requestAnimationFrame(tick);
+}
+window.requestAnimationFrame(tick);
+function focusClock(active) {
+  document.body.classList.toggle("focus", active);
+  focusButton.setAttribute("aria-pressed", String(active));
+  focusButton.textContent = active ? "返回记录" : "只显示计时器";
+  window.scrollTo(0, 0);
+}
+focusButton.addEventListener("click", () => focusClock(!document.body.classList.contains("focus")));
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && document.body.classList.contains("focus")) focusClock(false);
+});
+
+function summarize(raw) {
+  const tokens = raw.trim().split(/[\s,，;；、]+/).filter(Boolean);
+  if (!tokens.length) return { text: "尚无样本" };
+  const values = tokens.map(Number);
+  if (tokens.some((t, i) => !/^\d+(?:\.\d+)?$/.test(t) || !Number.isFinite(values[i]) || values[i] > Number.MAX_SAFE_INTEGER))
+    return { text: "请输入非负毫秒数，并检查分隔符。", error: true };
+  values.sort((a, b) => a - b);
+  const n = values.length;
+  const middle = Math.floor(n / 2);
+  const median = n % 2 ? values[middle] : (values[middle - 1] + values[middle]) / 2;
+  const p95 = values[Math.ceil(n * .95) - 1];
+  const pretty = value => value.toLocaleString("zh-CN", { maximumFractionDigits: 3 });
+  return { text: n + " 个 · 中位数 " + pretty(median) + " ms · P95 " + pretty(p95) + " ms" };
+}
+const storageNote = document.getElementById("storage");
+const storageKey = "weimirror.latency.v1";
+let saved = {};
+try {
+  const previous = JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+  if (previous && typeof previous === "object" && !Array.isArray(previous)) saved = previous;
+  storageNote.textContent = "填写后会尝试保存在当前浏览器。";
+} catch (_) { storageNote.textContent = "当前浏览器未提供本地保存；关闭页面前请记下结果。"; }
+function remember() {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(saved));
+    storageNote.textContent = "已保存在当前浏览器。";
+  } catch (_) { storageNote.textContent = "当前浏览器未提供本地保存；关闭页面前请记下结果。"; }
+}
+for (const mode of ["USB", "AirPlay 1080p60", "AirPlay 720p60", "AirPlay 720p30"]) {
+  for (const time of [2, 30]) {
+    const key = mode + " · " + time + " 分钟";
+    const card = document.createElement("div");
+    card.className = "samples";
+    const id = "s-" + mode.replace(/ /g, "-") + "-" + time;
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = key;
+    const field = document.createElement("textarea");
+    field.rows = 2;
+    field.id = id;
+    field.spellcheck = false;
+    field.value = typeof saved[key] === "string" ? saved[key] : "";
+    const result = document.createElement("output");
+    result.className = "result";
+    result.setAttribute("for", id);
+    function refresh() {
+      const summary = summarize(field.value);
+      result.textContent = summary.text;
+      result.classList.toggle("error", Boolean(summary.error));
+    }
+    field.addEventListener("input", () => { refresh(); saved[key] = field.value; remember(); });
+    refresh();
+    card.append(label,field,result);
+    document.getElementById("samples").appendChild(card);
+  }
+}
+</script>
+</body>
+</html>

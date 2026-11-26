@@ -1,0 +1,23 @@
+微映 / WeiMirror
+
+WeiMirror 提供 Windows 桌面界面、会话控制和预览，并通过公开在源码中的组件接口连接 iPhoneMirror 的投屏引擎。WeiMirror 源代码和本程序按 GNU GPL 第 3 版（仅此版本，SPDX 标识 GPL-3.0-only）提供。许可证全文见同目录 LICENSE.txt。
+
+引擎来源
+
+微映 1.3 增加了 720p60 屏幕镜像接收进程。其 SDK 回调接口、能力协商和 IPC 消息格式参考 iPhoneMirror v1.8.3 源码中的 src/WirelessHost/WirelessHost.cpp、src/WirelessHost/IpcProtocol.h 与 src/Core/src/Capture/WirelessReceiverHub.cpp。所需无线组件沿用该版本的发布包及其各自的许可。
+
+iPhoneMirror v1.8.3，RayrenSX 与项目贡献者。其原始组件按 GPL-3.0-only 提供。USB 使用 iPhoneMirror.Core。AirPlay 使用 iPhoneMirror.WirelessHost 及其无线运行时。上游的第三方组件各自保留原有许可证和版权声明。
+
+固定版本的引擎源码与构建脚本
+https://github.com/RayrenSX/iPhoneMirror/tree/v1.8.3
+
+固定版本的引擎发行包
+https://github.com/RayrenSX/iPhoneMirror/releases/tag/v1.8.3
+
+上游第三方声明及各组件对应源码索引
+https://github.com/RayrenSX/iPhoneMirror/blob/v1.8.3/THIRD_PARTY_NOTICES.md
+
+无线组件对应源码、版本、补丁和许可记录
+https://github.com/RayrenSX/iPhoneMirror/blob/v1.8.3/third_party/airplay-server/SOURCE.md
+
+上游发行包内的 LICENSE、THIRD_PARTY_NOTICES.md、licenses 和 Wireless/licenses 随对应组件保留。AirPlay、iPad 和 iPhone 为 Apple 的商标。WeiMirror 为独立开发项目。
