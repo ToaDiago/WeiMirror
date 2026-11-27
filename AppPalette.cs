@@ -8,8 +8,19 @@ namespace MirrorDesk
     internal sealed class PalettePicker : ComboBox
     {
         AppPalette palette=new AppPalette(0,false);
+        string emptyText="";
 
         public PalettePicker() { DrawMode=DrawMode.OwnerDrawFixed; }
+
+        internal string EmptyText
+        {
+            get { return emptyText; }
+            set {
+                if (emptyText==value) return;
+                emptyText=value;
+                if (Items.Count==0) Invalidate();
+            }
+        }
 
         internal void ApplyPalette(AppPalette value)
         {
@@ -37,10 +48,11 @@ namespace MirrorDesk
             }
             using (var brush=new SolidBrush(background)) e.Graphics.FillRectangle(brush,e.Bounds);
             int index=edit && e.Index<0 ? SelectedIndex : e.Index;
-            if (index>=0 && index<Items.Count) {
+            string caption=index>=0 && index<Items.Count ? GetItemText(Items[index]) : Items.Count==0 ? emptyText : "";
+            if (caption.Length>0) {
                 var textBounds=Rectangle.Inflate(e.Bounds,-Math.Max(4,Font.Height/4),0);
                 if (textBounds.Width>0)
-                    TextRenderer.DrawText(e.Graphics,GetItemText(Items[index]),Font,textBounds,ink,
+                    TextRenderer.DrawText(e.Graphics,caption,Font,textBounds,ink,
                         TextFormatFlags.VerticalCenter|TextFormatFlags.SingleLine|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
             }
             e.DrawFocusRectangle();

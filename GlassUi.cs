@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 namespace MirrorDesk
 {
-    internal enum InterfaceGlyph { None, Settings, Casting, Appearance, Components }
+    internal enum InterfaceGlyph { None, Settings, Casting, Appearance, Components, Tools }
 
     internal interface IGlassHost
     {
@@ -73,11 +73,13 @@ namespace MirrorDesk
             if (box.Width<4 || box.Height<4) return;
             var state=g.Save();
             g.SmoothingMode=SmoothingMode.AntiAlias;
+            bool highContrast=SystemInformation.HighContrast;
+            var top=highContrast ? SystemColors.Window : Color.FromArgb(palette.Dark ? 109 : 38,palette.Action);
+            var bottom=highContrast ? top : Color.FromArgb(palette.Dark ? 57 : 15,palette.Action);
+            var rim=highContrast ? SystemColors.WindowText : Color.FromArgb(palette.Dark ? 81 : 162,Color.White);
             using (var shape=Round(box,Math.Max(10,track.Font.Height)))
-            using (var fill=new SolidBrush(SystemInformation.HighContrast ? SystemColors.Window :
-                Color.FromArgb(palette.Dark ? 91 : 30,palette.Action)))
-            using (var outline=new Pen(SystemInformation.HighContrast ? SystemColors.WindowText :
-                Color.FromArgb(palette.Dark ? 56 : 126,Color.White))) {
+            using (var fill=new LinearGradientBrush(box,top,bottom,90f))
+            using (var outline=new Pen(rim)) {
                 g.FillPath(fill,shape);
                 g.DrawPath(outline,shape);
             }
@@ -203,8 +205,8 @@ namespace MirrorDesk
                     bottom=AppPalette.Blend(action,Color.FromArgb(15,24,59),.24);
                     lip=Color.FromArgb(196,AppPalette.Blend(palette.Atmosphere,Color.White,.62));
                 } else {
-                    top=Color.FromArgb(hot ? 222 : 153,palette.Dark ? palette.Selection : Color.White);
-                    bottom=Color.FromArgb(hot ? 129 : 64,palette.Dark ? palette.Canvas : Color.White);
+                    top=Color.FromArgb(pressed ? 181 : hot ? 222 : 153,palette.Dark ? palette.Selection : Color.White);
+                    bottom=Color.FromArgb(pressed ? 107 : hot ? 129 : 64,palette.Dark ? palette.Canvas : Color.White);
                     lip=Color.FromArgb(palette.Dark ? 94 : 224,Color.White);
                 }
                 using (var fill=new LinearGradientBrush(box,top,bottom,88f))
@@ -223,11 +225,11 @@ namespace MirrorDesk
             return accent ? Color.White : palette.Ink;
         }
 
-        internal static void Segment(Graphics g,Control control,Rectangle box,int radius,AppPalette palette,bool selected,bool hot)
+        internal static void Segment(Graphics g,Control control,Rectangle box,int radius,AppPalette palette,bool selected,bool hot,bool pressed=false)
         {
             if ((!selected && !hot) || box.Width<4 || box.Height<4) return;
             if (!selected || SystemInformation.HighContrast) {
-                Lens(g,box,radius,palette,SystemInformation.HighContrast && selected,hot);
+                Lens(g,box,radius,palette,SystemInformation.HighContrast && selected,hot,pressed);
                 return;
             }
             var state=g.Save();
@@ -239,8 +241,8 @@ namespace MirrorDesk
                 g.DrawImageUnscaled(sample,box.Location);
                 g.Restore(clip);
 
-                var top=Color.FromArgb((palette.Dark ? 77 : 155)+(hot ? 18 : 0),Color.White);
-                var bottom=Color.FromArgb(palette.Dark ? 28 : 38,Color.White);
+                var top=Color.FromArgb((palette.Dark ? 77 : 155)+(pressed ? -12 : hot ? 18 : 0),Color.White);
+                var bottom=Color.FromArgb((palette.Dark ? 28 : 38)+(pressed ? 12 : 0),Color.White);
                 using (var surface=new LinearGradientBrush(box,top,bottom,74f))
                 using (var rim=new LinearGradientBrush(box,
                     Color.FromArgb(palette.Dark ? 173 : 250,Color.White),
@@ -292,6 +294,11 @@ namespace MirrorDesk
                         g.DrawPolygon(pen,new[] {new Point(2,7),new Point(10,3),new Point(18,7),new Point(10,11)});
                         g.DrawLines(pen,new[] {new Point(2,11),new Point(10,15),new Point(18,11)});
                         g.DrawLines(pen,new[] {new Point(2,15),new Point(10,19),new Point(18,15)});
+                        break;
+                    case InterfaceGlyph.Tools:
+                        g.DrawEllipse(pen,3,3,14,14);
+                        g.DrawLine(pen,10,9,10,13);
+                        g.DrawLine(pen,10,6.5f,10,6.6f);
                         break;
                 }
             }

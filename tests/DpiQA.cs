@@ -1,7 +1,6 @@
 using System;
 using System.Drawing;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using MirrorDesk;
@@ -33,9 +32,19 @@ static class DpiQA
         int result=0;
         try {
             Application.EnableVisualStyles();
-            using (var main=new MainForm(null)) {
-                var settings=(SettingsDialog)typeof(MainForm).GetField("settingsDialog",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
+            using (var main=new MainForm("")) {
+                main.ShowInTaskbar=false;
+                main.Show();
+                Application.DoEvents();
+                var settings=main.Controls.Find("SettingsPage",true).Single();
+                var settingsButton=(Button)main.Controls.Find("OpenSettings",true).Single();
+                var font=(ComboBox)settings.Controls.Find("InterfaceFont",true).Single();
+                var textSize=(ComboBox)settings.Controls.Find("TextPercent",true).Single();
+                var interfaceSize=(ComboBox)settings.Controls.Find("InterfaceSize",true).Single();
                 foreach (int dpi in new[]{96,120,144,192,96}) {
+                    font.SelectedIndex=0;
+                    textSize.SelectedIndex=1;
+                    interfaceSize.SelectedIndex=1;
                     main.ScaleConsole(dpi);
                     main.ClientSize=new Size(620*dpi/96,440);
                     main.PerformLayout();
@@ -51,16 +60,26 @@ static class DpiQA
                     }
                     Check(dpi<144 || dashboard.Height>viewport.ClientSize.Height,
                         "compact dashboard scrolls when needed at "+dpi+" DPI");
-                    settings.ApplyInterface(.9f,1.2f,"Segoe UI");
-                    settings.ScaleSettings(dpi);
-                    settings.ClientSize=new Size(434*dpi/96,320*dpi/96);
+                    settingsButton.PerformClick();
+                    Check(settings.Visible && settings.FindForm()==main && Application.OpenForms.Count==1,
+                        "settings stays in the control panel at "+dpi+" DPI");
+                    interfaceSize.SelectedIndex=0;
+                    textSize.SelectedIndex=3;
+                    font.SelectedIndex=font.FindStringExact("Segoe UI");
+                    main.ClientSize=new Size(434*dpi/96,407*dpi/96);
                     settings.PerformLayout();
-                    foreach (string label in new[]{"投屏","外观","组件","深色模式","始终显示投屏工具栏"}) {
+                    ((Button)settings.Controls.Find("SettingsSection0",true).Single()).PerformClick();
+                    foreach (string label in new[]{"投屏","外观","组件","工具","始终显示投屏工具栏","深色模式"}) {
+                        if (label=="深色模式") {
+                            ((Button)settings.Controls.Find("SettingsSection1",true).Single()).PerformClick();
+                            Application.DoEvents();
+                        }
                         var field=FindText(settings,label);
                         Check(field!=null && field.Font.Name=="Segoe UI" && field.Height>=field.Font.Height+2 &&
                             field.Width>=TextRenderer.MeasureText(label,field.Font).Width,
                             label+" fits small settings at 120% text and "+dpi+" DPI");
                     }
+                    settingsButton.PerformClick();
                 }
                 var dark=(CheckBox)FindText(settings,"深色模式");
                 var theme=(ComboBox)settings.Controls.Find("AppearanceTheme",true).Single();

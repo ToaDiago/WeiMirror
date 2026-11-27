@@ -52,7 +52,6 @@ static class GuiQA
     }
     [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr window,IntPtr dc,uint flags);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr window,int index);
-    [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr window);
     static Rectangle PixelsFor(Form window,Control child) {
         var screen=child.RectangleToScreen(child.ClientRectangle);
         screen.Offset(-window.Left,-window.Top);
@@ -90,28 +89,24 @@ static class GuiQA
             Check(ink>area.Height && quality.Text.Contains("高清自动"),"selected quality text reaches the native combo face");
         }
     }
-    static void Settings(Action<Form> inspect,bool viaShortcut=false) {
-        bool opened=false;
-        Exception failure=null;
-        using (var timer=new System.Windows.Forms.Timer { Interval=80 }) {
-            timer.Tick+=delegate {
-                var dialog=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.GetType().Name=="SettingsDialog" && f.Visible);
-                if (dialog==null) return;
-                opened=true;
-                timer.Stop();
-                try { inspect(dialog); }
-                catch (Exception error) { failure=error; }
-                finally { dialog.DialogResult=DialogResult.Cancel; }
-            };
-            timer.Start();
-            if (viaShortcut) Key(form,Keys.Control|Keys.Oemcomma);
-            else ((Button)Named(form,"OpenSettings")).PerformClick();
+    static void Settings(Action<Control> inspect,bool viaShortcut=false) {
+        int windowCount=Application.OpenForms.Count;
+        var settings=Named(form,"SettingsPage");
+        var header=(Button)Named(form,"OpenSettings");
+        if (viaShortcut) Key(form,Keys.Control|Keys.Oemcomma);
+        else header.PerformClick();
+        Check(settings.Visible && settings.FindForm()==form && form.Enabled && Application.OpenForms.Count==windowCount,
+            "settings opens in the enabled control panel");
+        try {
+            SettingsPage(settings,0);
+            inspect(settings);
+        } finally {
+            Key(form,Keys.Escape);
         }
-        if (failure!=null) throw failure;
-        Check(opened && form.Enabled,"settings opens from the header and returns to the console");
+        Check(!settings.Visible && Field<Button>(form,"primary").Visible,"Escape returns to the control panel");
     }
-    static void SettingsPage(Form dialog,int section) {
-        ((Button)Named(dialog,"SettingsSection"+section)).PerformClick();
+    static void SettingsPage(Control settings,int section) {
+        ((Button)Named(settings,"SettingsSection"+section)).PerformClick();
         Application.DoEvents();
     }
 
@@ -126,27 +121,14 @@ static class GuiQA
         form.PerformLayout();
         CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),primary);
         ReviewImage(form,"console-wireless-200");
-        Settings(dialog=>{
-            SettingsPage(dialog,0);
-            var originalSize=dialog.ClientSize;
-            try {
-                Call(dialog,"ScaleSettings",testDpi);
-                dialog.ClientSize=new Size(1016,738);
-                dialog.PerformLayout();
-                Application.DoEvents();
-                var quality=(ComboBox)Named(dialog,"AirPlayQuality");
-                CheckPaint(dialog,Named(dialog,"SettingsSection0"),Named(dialog,"SettingsSection1"),
-                    Field<CheckBox>(form,"audio"),Field<CheckBox>(form,"showToolbar"),(Control)dialog.CancelButton);
-                CheckQualityFace(dialog,quality);
-                ReviewImage(dialog,"settings-casting-200");
-                Check(dialog.Owner==form && !IsWindowEnabled(form.Handle),"the native console is disabled while its settings dialog is open");
-                CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),
-                    primary,Field<Button>(form,"showPreview"));
-                ReviewImage(form,"console-with-settings-open-200");
-            } finally {
-                Call(dialog,"ScaleSettings",originalDpi);
-                dialog.ClientSize=originalSize;
-            }
+        Settings(settings=>{
+            form.ClientSize=new Size(1016,738);
+            Application.DoEvents();
+            var quality=(ComboBox)Named(settings,"AirPlayQuality");
+            CheckPaint(form,Named(settings,"SettingsSection0"),Named(settings,"SettingsSection1"),
+                Field<CheckBox>(form,"audio"),Field<CheckBox>(form,"showToolbar"),Named(form,"OpenSettings"));
+            CheckQualityFace(form,quality);
+            ReviewImage(form,"settings-casting-200");
         },true);
         Call(form,"ScaleConsole",originalDpi);
         form.ClientSize=size;
@@ -154,21 +136,12 @@ static class GuiQA
         Idle();
     }
 
-    static void VerifyToolsDialog(Form settings) {
-        bool opened=false;
-        using (var timer=new System.Windows.Forms.Timer { Interval=50 }) {
-            timer.Tick+=delegate {
-                var tools=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.GetType().Name=="ToolsDialog");
-                if (tools==null) return;
-                timer.Stop();
-                opened=tools.Owner==settings && Named(tools,"OpenLatencyTest").Enabled &&
-                    Named(tools,"ExportLatencyTest").Enabled && Named(tools,"ExportSource").Enabled;
-                tools.Close();
-            };
-            timer.Start();
-            Field<Button>(form,"about").PerformClick();
-        }
-        Check(opened,"components opens Tools and About with latency and source actions");
+    static void VerifyToolsPage(Control settings) {
+        int windowCount=Application.OpenForms.Count;
+        SettingsPage(settings,3);
+        Check(new[] { "OpenLatencyTest","ExportLatencyTest","ExportSource" }
+            .All(name=>Named(settings,name).Visible && Named(settings,name).Enabled) &&
+            Application.OpenForms.Count==windowCount,"tools and about shows latency and source actions in settings");
     }
     static string StatText() { var win=Preview(); return win==null ? "" : Field<Label>(win,"stats").Text; }
     static bool OverlayShown() { var win=Preview(); return win!=null && Field<Label>(win,"overlay").Visible; }
@@ -181,7 +154,7 @@ static class GuiQA
         var picker=Field<Control>(target,"mode");
         return (int)picker.GetType().GetProperty("SelectedIndex").GetValue(picker,null);
     }
-    static Control Named(Form target,string name) {
+    static Control Named(Control target,string name) {
         return Descendants(target).Single(c=>c.Name==name);
     }
     static Form WithPrefs(Assembly assembly,object store) {
@@ -255,16 +228,18 @@ static class GuiQA
             null,new object[]{prefsPath},null);
         using (form = WithPrefs(assembly,prefs)) {
             form.ShowInTaskbar = false;
-            form.Show(); Until(() => !Field<bool>(form,"busy") && Field<Label>(form,"footer").Text.Contains("首次"),"first run");
+            form.Show(); Until(() => !Field<bool>(form,"busy") && Field<Label>(form,"footer").Text.Contains("组件")
+                && Field<Button>(form,"primary").Text.Contains("准备"),"first run");
             Button primary = Field<Button>(form,"primary");
             var mode = Field<Control>(form,"mode");
             string localPacks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WeiMirror","packs");
-            Check(Preview()==null && !ShowsPath(form,localPacks) && !form.Contains(Field<ComboBox>(form,"quality")),
+            Check(Preview()==null && !ShowsPath(form,localPacks) && !Named(form,"SettingsPage").Visible &&
+                !Field<ComboBox>(form,"quality").Visible,
                 "main panel keeps component paths and quality controls in settings");
             Check(primary.Font.SizeInPoints>=10 && primary.Font.SizeInPoints<12 && mode.Font.SizeInPoints<12,
                 "console uses compact default type at 100 percent");
             Settings(dialog=>{
-                Check(dialog.Opacity==1 && !dialog.AllowTransparency && (GetWindowLong(dialog.Handle,-20)&0x00080000)==0,
+                Check(form.Opacity==1 && !form.AllowTransparency && (GetWindowLong(form.Handle,-20)&0x00080000)==0,
                     "settings remains a normal opaque window while open");
                 Check(Descendants(form).Concat(Descendants(dialog)).Where(c=>c.Visible).All(c=>c.BackColor.A==255),
                     "visible settings controls have explicit opaque backgrounds");
@@ -282,7 +257,7 @@ static class GuiQA
                 var size=(ComboBox)Named(dialog,"InterfaceSize");
                 var fonts=(ComboBox)Named(dialog,"InterfaceFont");
                 Check(scale.Text=="100%" && size.Text=="中","text and interface size start at 100 percent");
-                ReviewImage(dialog,"settings");
+                ReviewImage(form,"settings");
                 float fontBefore=primary.Font.Size;
                 int widthBefore=form.ClientSize.Width;
                 scale.SelectedIndex=2;
@@ -291,28 +266,23 @@ static class GuiQA
                 Check(primary.Font.Size>fontBefore && form.ClientSize.Width>widthBefore && primary.Font.Name=="Segoe UI",
                     "font, type size and interface size update the console");
                 Field<CheckBox>(form,"darkMode").Checked=true;
-                ReviewImage(dialog,"settings-dark");
+                ReviewImage(form,"settings-dark");
                 Field<CheckBox>(form,"darkMode").Checked=false;
                 size.SelectedIndex=1;
                 scale.SelectedIndex=1;
                 fonts.SelectedIndex=0;
             });
             VerifyHighDpiRepaint(mode,primary);
-            bool setupOpened = false, setupPath = false, setupFonts = false;
-            using (var timer = new System.Windows.Forms.Timer {Interval=80}) {
-                timer.Tick += delegate {
-                    Form dlg = Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.GetType().Name=="SetupDialog");
-                    if (dlg != null) {
-                        setupOpened = Field<Button>(dlg,"download").Enabled && Field<Button>(dlg,"zip").Enabled && Field<Button>(dlg,"folder").Enabled;
-                        setupPath=ShowsPath(dlg,localPacks);
-                        setupFonts=Field<Button>(dlg,"download").Font.SizeInPoints>=12;
-                        timer.Stop(); Field<Button>(dlg,"cancel").PerformClick();
-                    }
-                };
-                timer.Start(); Click(primary);
-            }
-            Check(setupOpened && !form.IsDisposed,"first-run setup exposes online/ZIP/folder choices and closes");
-            Check(setupPath && setupFonts,"setup shows real output directory before download and has a large primary button");
+            int setupWindowCount=Application.OpenForms.Count;
+            Click(primary);
+            var setup=Named(form,"SetupPage");
+            Check(setup.Visible && Application.OpenForms.Count==setupWindowCount &&
+                new[] { "DownloadComponents","ImportComponents","ChooseComponentDirectory" }
+                .All(name=>Named(setup,name).Visible && Named(setup,name).Enabled),
+                "first-run setup shows online/ZIP/folder choices in the control panel");
+            Check(ShowsPath(setup,localPacks),"setup shows the real output directory before download");
+            ((Button)Named(form,"OpenSettings")).PerformClick();
+            Check(!setup.Visible && primary.Visible,"component setup returns to the control panel");
             object core = Activator.CreateInstance(assembly.GetType("MirrorDesk.MirrorCore"), runtime);
             // ReceiverQA exercises the host self-test as a standalone subprocess.
             // Reuse that successful fixture preflight to isolate UI lifecycle
@@ -326,7 +296,7 @@ static class GuiQA
                 Check(ShowsPath(dialog,runtime),"components settings shows the active runtime's actual path");
                 Check(Field<Button>(form,"openPath").Enabled && Field<Button>(form,"driver").Enabled,
                     "active components expose their directory and USB driver actions");
-                VerifyToolsDialog(dialog);
+                VerifyToolsPage(dialog);
             });
             VerifyUsbDiagnostics(Field<Button>(form,"refresh"));
             Check(Field<ComboBox>(form,"devices").Text=="书桌 iPad","refresh populates USB list");

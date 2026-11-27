@@ -21,7 +21,20 @@ namespace MirrorDesk
         readonly ModeChoice usb, air;
         AppPalette palette=new AppPalette(0,false);
         int index;
+        bool selectionLocked;
         public event EventHandler SelectedIndexChanged;
+
+        internal bool SelectionLocked
+        {
+            get { return selectionLocked; }
+            set {
+                if (selectionLocked==value) return;
+                selectionLocked=value;
+                usb.NotifyStateChange();
+                air.NotifyStateChange();
+            }
+        }
+
         public int SelectedIndex
         {
             get { return index; }
@@ -54,8 +67,8 @@ namespace MirrorDesk
             row.Controls.Add(usb, 0, 0);
             row.Controls.Add(air, 1, 0);
             Controls.Add(row);
-            usb.Click += delegate { SelectedIndex=0; };
-            air.Click += delegate { SelectedIndex=1; };
+            usb.Click += delegate { if (!SelectionLocked) SelectedIndex=0; };
+            air.Click += delegate { if (!SelectionLocked) SelectedIndex=1; };
             usb.SetSelected(true); air.SetSelected(false);
         }
 
@@ -87,9 +100,11 @@ namespace MirrorDesk
         {
             if (ContainsFocus && (key==Keys.Right || key==Keys.Left || key==Keys.Up || key==Keys.Down))
             {
-                int next=1-index;
-                (next==0 ? usb : air).Focus();
-                SelectedIndex=next;
+                if (!SelectionLocked) {
+                    int next=1-index;
+                    (next==0 ? usb : air).Focus();
+                    SelectedIndex=next;
+                }
                 return true;
             }
             return base.ProcessCmdKey(ref message,key);
@@ -100,7 +115,8 @@ namespace MirrorDesk
             readonly bool wired;
             public AppPalette Palette = new AppPalette(0,false);
             public bool Checked { get; private set; }
-            bool hot;
+            bool hot, pressed;
+            bool SelectionLocked { get { return (Parent?.Parent as TransportPicker)?.SelectionLocked==true; } }
             public ModeChoice(bool wired)
             {
                 this.wired = wired;
@@ -111,6 +127,10 @@ namespace MirrorDesk
             {
                 Checked=TabStop=selected;
                 Invalidate();
+                NotifyStateChange();
+            }
+            public void NotifyStateChange()
+            {
                 if (IsHandleCreated) AccessibilityNotifyClients(AccessibleEvents.StateChange,-1);
             }
             sealed class ChoiceAccessibility : ControlAccessibleObject
@@ -119,14 +139,41 @@ namespace MirrorDesk
                 public ChoiceAccessibility(ModeChoice choice) : base(choice) { this.choice=choice; }
                 public override AccessibleRole Role { get { return AccessibleRole.RadioButton; } }
                 public override AccessibleStates State {
-                    get { return base.State | (choice.Checked ? AccessibleStates.Checked : AccessibleStates.None); }
+                    get {
+                        var state=base.State;
+                        if (choice.Checked) state|=AccessibleStates.Checked;
+                        if (choice.SelectionLocked) state|=AccessibleStates.Unavailable;
+                        return state;
+                    }
                 }
                 public override string DefaultAction { get { return "选择"; } }
-                public override void DoDefaultAction() { if (choice.Enabled) choice.PerformClick(); }
+                public override void DoDefaultAction() { if (choice.Enabled && !choice.SelectionLocked) choice.PerformClick(); }
             }
             protected override AccessibleObject CreateAccessibilityInstance() { return new ChoiceAccessibility(this); }
             protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hot=true; Invalidate(); }
-            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hot=false; Invalidate(); }
+            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hot=pressed=false; Invalidate(); }
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                base.OnMouseDown(e);
+                if (e.Button!=MouseButtons.Left || SelectionLocked) return;
+                pressed=true;
+                Invalidate();
+            }
+            protected override void OnMouseCaptureChanged(EventArgs e)
+            {
+                base.OnMouseCaptureChanged(e);
+                if (!pressed || Capture) return;
+                pressed=false;
+                Invalidate();
+            }
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                if (e.Button==MouseButtons.Left && pressed) {
+                    pressed=false;
+                    Invalidate();
+                }
+                base.OnMouseUp(e);
+            }
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g=e.Graphics;
@@ -134,7 +181,7 @@ namespace MirrorDesk
                 Color ink=GlassUi.SegmentInk(Palette,Checked,Enabled);
                 if (Width<4 || Height<4) return;
                 GlassUi.Segment(g,this,Rectangle.Inflate(ClientRectangle,-2,-2),Math.Max(9,Font.Height*3/4),
-                    Palette,Checked,hot && Enabled);
+                    Palette,Checked,hot && Enabled,pressed);
                 int icon = Math.Max(18, Font.Height * 4 / 5);
                 int gap = Math.Max(5, icon / 3);
                 int tw = TextRenderer.MeasureText(g,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
@@ -254,11 +301,13 @@ namespace MirrorDesk
         }
 
         readonly ReceptionBadge sessionBadge = new ReceptionBadge { Dock=DockStyle.Fill, Margin=Padding.Empty };
-        readonly Label airReceiver = GlassUi.Label("",11,Theme.Ink);
-        readonly Button settingsButton = new GlassButton("设置") { Symbol=InterfaceGlyph.Settings,ClearGlass=true };
+        readonly Label airReceiver = GlassUi.Label("",11.5f,Theme.Ink,true);
+        Control usbDetails, airDetails, visibleConnectionDetails;
+        readonly GlassButton settingsButton = new GlassButton("设置") { Symbol=InterfaceGlyph.Settings,ClearGlass=true };
         readonly BrandMark logo = new BrandMark();
         TableLayoutPanel dashboard, connectionActions;
         Panel viewport;
+        Label consoleSubtitle;
         DpiLayout consoleDpi;
         int consoleDpiValue=96;
         AppPalette palette = new AppPalette(0,false);
@@ -270,7 +319,8 @@ namespace MirrorDesk
             palette.Apply(this,primary);
             logo.Palette=palette;
             logo.Invalidate();
-            settingsDialog.ApplyPalette(palette);
+            settingsPage.ApplyPalette(palette);
+            setupPage.ApplyPalette(palette);
             UpdateDashboardStatus();
             preview?.ApplyPalette(palette);
             Invalidate(true);
@@ -280,6 +330,7 @@ namespace MirrorDesk
         {
             consoleDpiValue=dpi;
             if (!consoleDpi.Apply(dpi,InterfaceScale,TextScale,InterfaceFont)) return;
+            settingsPage.ScaleNavigation(dpi/96f*InterfaceScale);
             var area=Screen.FromControl(this).WorkingArea;
             MinimumSize=new Size(Math.Min(UiPixels(398),area.Width),Math.Min(UiPixels(300),area.Height));
             ArrangeConnectionActions();
@@ -323,9 +374,12 @@ namespace MirrorDesk
             string state = closing ? "正在退出" : WaitingForUsb ? "等待重连" : playing ? (hadVideo ? "投屏中" : "等待画面") : listening ? "等待设备" :
                 core == null ? "待配置" : "就绪";
             sessionBadge.Text=state;
-            sessionBadge.Signal=playing || listening ? palette.Accent : palette.Action;
+            var signal=playing || listening ? palette.Accent : palette.Action;
+            if (sessionBadge.Signal!=signal) {
+                sessionBadge.Signal=signal;
+                sessionBadge.Invalidate();
+            }
             sessionBadge.ForeColor=palette.Ink;
-            sessionBadge.Invalidate();
         }
 
         protected override void OnPaintBackground(PaintEventArgs e) { GlassUi.Backdrop(e.Graphics,this,palette); }
@@ -358,19 +412,22 @@ namespace MirrorDesk
             MinimumSize=new Size(398,300); ClientSize=new Size(588,406);
 
             var page=GlassUi.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,67,-1);
-            var header=GlassUi.Grid(4,1); Theme.Cols(header,48,86,-1,81); Theme.Rows(header,-1);
+            var header=GlassUi.Grid(4,1); Theme.Cols(header,48,86,-1,105); Theme.Rows(header,-1);
             header.Padding=new Padding(27,0,27,0);
             logo.Dock=DockStyle.Fill; logo.Margin=new Padding(0,12,9,12); logo.TabStop=false;
             header.Controls.Add(logo,0,0);
             var brandTitle=GlassUi.Label("微映",17,Theme.Ink,true);
             brandTitle.Name="BrandTitle";
             header.Controls.Add(brandTitle,1,0);
-            var subtitle=GlassUi.Label("iPhone / iPad",10,Theme.Muted);
-            subtitle.Name="Muted";
-            header.Controls.Add(subtitle,2,0);
+            consoleSubtitle=GlassUi.Label("iPhone / iPad",10,Theme.Muted);
+            consoleSubtitle.Name="Muted";
+            header.Controls.Add(consoleSubtitle,2,0);
             settingsButton.Name="OpenSettings";
             settingsButton.Font=Theme.Font(10.5f,true); settingsButton.Margin=new Padding(0,15,0,14);
-            settingsButton.Click+=delegate { ShowSettings(); };
+            settingsButton.Click+=delegate {
+                if (viewport.Visible) ShowConsolePage(settingsPage);
+                else ReturnToConsole();
+            };
             header.Controls.Add(settingsButton,3,0); page.Controls.Add(header,0,0);
 
             viewport=new GlassPanel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, Name="Canvas" };
@@ -379,11 +436,49 @@ namespace MirrorDesk
             Theme.Cols(dashboard,-1); Theme.Rows(dashboard,219,11,93);
             dashboard.Controls.Add(BuildConnectionCard(),0,0);
             dashboard.Controls.Add(BuildSessionCard(),0,2);
-            viewport.Controls.Add(dashboard); page.Controls.Add(viewport,0,1);
+            viewport.Controls.Add(dashboard);
+            BuildSettings();
+            setupPage=new SetupPage();
+            setupPage.BackRequested+=delegate { if (!closing) ShowConsolePage(viewport); };
+            setupPage.Prepared+=async path => {
+                if (closing) return;
+                ShowConsolePage(viewport);
+                await ActionAsync(() => OpenEngine(path));
+            };
+            var content=new GlassPanel { Dock=DockStyle.Fill, Margin=Padding.Empty };
+            settingsPage.Visible=setupPage.Visible=false;
+            content.Controls.Add(viewport);
+            content.Controls.Add(settingsPage);
+            content.Controls.Add(setupPage);
+            page.Controls.Add(content,0,1);
             Controls.Add(page);
             consoleDpi=new DpiLayout(this);
-            BuildSettings();
+            detail.SetToolTip(settingsButton,"打开设置（Ctrl+,）");
             ResumeLayout(true);
+        }
+
+        void ShowConsolePage(Control page)
+        {
+            bool receiver=page==viewport;
+            var content=viewport.Parent;
+            content.SuspendLayout();
+            try {
+                viewport.Visible=receiver;
+                settingsPage.Visible=page==settingsPage;
+                setupPage.Visible=page==setupPage;
+                page.BringToFront();
+            } finally { content.ResumeLayout(true); }
+            consoleSubtitle.Text=receiver ? "iPhone / iPad" : page==settingsPage ? "设置" : "组件准备";
+            settingsButton.Text=receiver ? "设置" : "返回投屏";
+            settingsButton.Symbol=receiver ? InterfaceGlyph.Settings : InterfaceGlyph.None;
+            detail.SetToolTip(settingsButton,receiver ? "打开设置（Ctrl+,）" : "返回投屏控制台（Esc）");
+            settingsButton.Focus();
+        }
+
+        void ReturnToConsole()
+        {
+            if (setupPage.Visible) setupPage.RequestBack();
+            else ShowConsolePage(viewport);
         }
 
         int UiPixels(int value)
@@ -406,7 +501,17 @@ namespace MirrorDesk
             var usbPick=GlassUi.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,81); Theme.Rows(usbPick,-1);
             refresh.Font=Theme.Font(10.5f); refresh.Margin=new Padding(8,0,0,0);
             usbPick.Controls.Add(devices,0,0); usbPick.Controls.Add(refresh,1,0);
-            input.Controls.Add(airReceiver); input.Controls.Add(usbPick);
+            var receiver=GlassUi.Grid(2,1);
+            Theme.Cols(receiver,112,-1); Theme.Rows(receiver,-1);
+            var caption=GlassUi.Label("接收端名称",10,Theme.Muted);
+            caption.Name="Muted";
+            receiver.Controls.Add(caption,0,0);
+            airReceiver.AccessibleName="AirPlay 接收端名称";
+            receiver.Controls.Add(airReceiver,1,0);
+            receiver.Visible=false;
+            airDetails=receiver;
+            usbDetails=visibleConnectionDetails=usbPick;
+            input.Controls.Add(receiver); input.Controls.Add(usbPick);
             card.Controls.Add(input,0,3);
 
             hint.Font=Theme.Font(10); hint.Name="Muted";
@@ -420,6 +525,19 @@ namespace MirrorDesk
             connectionActions.Controls.Add(primary,1,0);
             card.Controls.Add(connectionActions,0,5);
             return card;
+        }
+
+        void ShowConnectionDetails(bool wireless)
+        {
+            var next=wireless ? airDetails : usbDetails;
+            if (visibleConnectionDetails==next) return;
+            input.SuspendLayout();
+            try {
+                next.BringToFront();
+                next.Visible=true;
+                visibleConnectionDetails.Visible=false;
+                visibleConnectionDetails=next;
+            } finally { input.ResumeLayout(true); }
         }
 
         ConsoleSurface BuildSessionCard()

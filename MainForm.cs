@@ -17,10 +17,12 @@ namespace MirrorDesk
         readonly Label footer = GlassUi.Label("",10.5f,Theme.Muted);
         readonly Label hint = GlassUi.Label("",10.5f,Theme.Muted), pathCaption = GlassUi.Label("",11,Theme.Ink,true);
         readonly Button primary = new GlassButton("",true), refresh = new GlassButton("刷新"), driver = new GlassButton("USB 驱动管理…");
-        readonly Button about = new GlassButton("工具与关于"), openPath = new GlassButton("打开目录"), showPreview = new GlassButton("显示投屏窗口");
+        readonly Button openPath = new GlassButton("打开目录"), showPreview = new GlassButton("显示投屏窗口");
+        SetupPage setupPage;
         readonly TextBox componentPath = new TextBox { ReadOnly=true, Multiline=true, WordWrap=true };
         readonly TransportPicker mode = new TransportPicker();
-        readonly ComboBox devices = Picker(), quality = Picker();
+        readonly PalettePicker devices = Picker();
+        readonly ComboBox quality = Picker();
         readonly TextBox name = new TextBox { Text = "WeiMirror", MaxLength = 60, Dock = DockStyle.Top, Margin = Padding.Empty };
         readonly CheckBox audio = new GlassToggle("在电脑上播放声音") { Checked = true };
         PreviewWindow preview;
@@ -46,7 +48,7 @@ namespace MirrorDesk
         int revision, idlePolls;
         bool Wireless { get { return mode.SelectedIndex == 1; } }
 
-        static ComboBox Picker()
+        static PalettePicker Picker()
         {
             return new PalettePicker { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top,
                 IntegralHeight = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty };
@@ -104,7 +106,6 @@ namespace MirrorDesk
                 });
             };
             driver.Click += delegate { OpenDriver(); };
-            about.Click += delegate { ShowAbout(); };
             openPath.Click += delegate { OpenComponentFolder(); };
             showPreview.Click += delegate {
                 var window = preview;
@@ -142,15 +143,15 @@ namespace MirrorDesk
         void UpdateControls()
         {
             if (IsDisposed || Disposing) return;
-            var usbPick = input.Controls["UsbPick"];
-            if (usbPick == null) return;
+            if (usbDetails == null) return;
             bool wifi = Wireless;
-            usbPick.Visible = !wifi; airReceiver.Visible = wifi;
             UpdateAirReceiverLabel();
-            mode.Enabled = !busy && !closing;
+            ShowConnectionDetails(wifi);
+            mode.SelectionLocked = busy || closing;
             bool sessionRequested = playing || WaitingForUsb;
             refresh.Enabled = core != null && !busy && !sessionRequested;
-            devices.Enabled = !sessionRequested && !busy;
+            devices.EmptyText = core == null ? "等待准备投屏组件" : "未检测到 USB 设备";
+            devices.Enabled = devices.Items.Count>0 && !sessionRequested && !busy;
             name.Enabled = quality.Enabled = !listening && !busy;
             audio.Enabled = !busy && !closing;
             primary.Enabled = !busy && !closing && (core == null || wifi || sessionRequested || devices.SelectedItem is Device);
@@ -171,7 +172,11 @@ namespace MirrorDesk
 
         void UpdateAirReceiverLabel()
         {
-            airReceiver.Text="接收端名称  " + name.Text.Trim();
+            string receiver=name.Text.Trim();
+            if (receiver.Length==0) receiver="未命名";
+            if (airReceiver.Text==receiver) return;
+            airReceiver.Text=receiver;
+            detail.SetToolTip(airReceiver,receiver);
         }
 
         void OpenComponentFolder()
@@ -267,7 +272,7 @@ namespace MirrorDesk
         {
             string path = requestedEngine ?? await Task.Run(() => RuntimePack.Find());
             if (!String.IsNullOrWhiteSpace(path)) await OpenEngine(path);
-            else footer.Text = "首次使用，请先准备投屏组件。";
+            else footer.Text = "请先准备组件。";
         }
         async Task OpenEngine(string path)
         {
@@ -317,11 +322,16 @@ namespace MirrorDesk
         async Task ChangeMode()
         {
             if (busy || closing) return;
-            bool newMode = Wireless;
+            if (core==null) {
+                footer.Text="请先准备组件。";
+                UpdateControls();
+                return;
+            }
+            bool wireless=Wireless;
             await ActionAsync(async () => {
-                if (core != null && (playing || listening || WaitingForUsb)) await StopReception();
-                if (core != null && !newMode) await Scan(true);
-                else footer.Text = core == null ? "首次使用，请先准备投屏组件。" : "点「开启 AirPlay 接收」，让 iPad 发现这台电脑。";
+                if (playing || listening || WaitingForUsb) await StopReception();
+                if (!wireless) await Scan(true);
+                else footer.Text="点「开启 AirPlay 接收」，让 iPhone 或 iPad 发现这台电脑。";
             });
         }
         async Task Scan(bool metadata)
@@ -346,8 +356,7 @@ namespace MirrorDesk
         async Task PrimaryAction()
         {
             if (core == null) {
-                using (var setup = new SetupDialog(palette))
-                    if (setup.ShowDialog(this) == DialogResult.OK) await OpenEngine(setup.EngineDirectory);
+                ShowConsolePage(setupPage);
                 return;
             }
             if (playing || listening || WaitingForUsb) { await StopReception(); return; }
@@ -541,18 +550,16 @@ namespace MirrorDesk
                 footer.Text="完成 USB 驱动配置后，请点「刷新」。";
             } catch (Exception ex) { footer.Text=ex.GetBaseException().Message; }
         }
-        void ShowAbout()
-        {
-            using (var form = new ToolsDialog(palette)) form.ShowDialog(settingsDialog);
-        }
         async void OnClosing(object sender,FormClosingEventArgs e)
         {
             if (canClose) return;
             e.Cancel=true;
             if (closing) return;
             closing=true; revision++; timer.Stop(); UpdateControls(); footer.Text="正在释放接收设备…";
+            setupPage.CancelPreparation();
+            setupPage.Enabled=false;
             try {
-                while (busy || polling) await Task.Delay(30);
+                while (busy || polling || setupPage.IsPreparing) await Task.Delay(30);
                 SavePreferences();
                 if (core!=null) await OnCore(() => core.Dispose());
             } catch (Exception) { }
@@ -565,7 +572,6 @@ namespace MirrorDesk
         protected override void Dispose(bool disposing)
         {
             if (disposing) {
-                settingsDialog?.Dispose();
                 preferenceTimer.Dispose(); timer.Dispose(); detail.Dispose(); serial.Dispose();
             }
             base.Dispose(disposing);
