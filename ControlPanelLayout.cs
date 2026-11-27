@@ -19,6 +19,7 @@ namespace MirrorDesk
     internal sealed class TransportPicker : UserControl
     {
         readonly ModeChoice usb, air;
+        AppPalette palette=new AppPalette(0,false);
         int index;
         public event EventHandler SelectedIndexChanged;
         public int SelectedIndex
@@ -38,18 +39,18 @@ namespace MirrorDesk
         {
             AccessibleName = "连接方式";
             AccessibleRole = AccessibleRole.Grouping;
-            Font = Theme.Font(14);
+            Font = Theme.Font(11,true);
             Dock = DockStyle.Fill;
             Margin = Padding.Empty;
+            Padding=new Padding(4);
             TabStop = false;
-            var row = Theme.Grid(2, 1);
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw,true);
+            var row = GlassUi.Grid(2, 1);
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
             Theme.Rows(row,-1);
             usb = MakeChoice("USB 数据线", "UsbMode", true);
             air = MakeChoice("无线 AirPlay", "AirPlayMode", false);
-            usb.Margin = new Padding(0,0,4,0);
-            air.Margin = new Padding(4,0,0,0);
             row.Controls.Add(usb, 0, 0);
             row.Controls.Add(air, 1, 0);
             Controls.Add(row);
@@ -63,7 +64,7 @@ namespace MirrorDesk
             var radio = new ModeChoice(wired) {
                 Text = text, Name = name, AccessibleName = text,
                 AccessibleRole=AccessibleRole.RadioButton, FlatStyle = FlatStyle.Flat,
-                Font = Font, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter,
+                Dock = DockStyle.Fill, Margin=Padding.Empty, TextAlign = ContentAlignment.MiddleCenter,
                 UseVisualStyleBackColor = false, Cursor = Cursors.Hand
             };
             return radio;
@@ -71,8 +72,15 @@ namespace MirrorDesk
 
         internal void ApplyPalette(AppPalette palette)
         {
-            usb.Palette=air.Palette=palette;
+            this.palette=usb.Palette=air.Palette=palette;
+            Invalidate();
             usb.Invalidate(); air.Invalidate();
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            GlassUi.ControlBackground(e.Graphics,this);
+            GlassUi.Tray(e.Graphics,this,palette);
         }
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
@@ -92,10 +100,12 @@ namespace MirrorDesk
             readonly bool wired;
             public AppPalette Palette = new AppPalette(0,false);
             public bool Checked { get; private set; }
+            bool hot;
             public ModeChoice(bool wired)
             {
                 this.wired = wired;
-                SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+                SetStyle(ControlStyles.Opaque | ControlStyles.UserPaint |
+                    ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer,true);
             }
             public void SetSelected(bool selected)
             {
@@ -115,15 +125,16 @@ namespace MirrorDesk
                 public override void DoDefaultAction() { if (choice.Enabled) choice.PerformClick(); }
             }
             protected override AccessibleObject CreateAccessibilityInstance() { return new ChoiceAccessibility(this); }
+            protected override void OnMouseEnter(EventArgs e) { base.OnMouseEnter(e); hot=true; Invalidate(); }
+            protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hot=false; Invalidate(); }
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g=e.Graphics;
-                Color ink = Checked ? Palette.Ink : Palette.Muted;
-                Color fill = Checked ? Palette.Selection : Palette.Surface;
-                Color line = Checked ? Palette.Accent : Palette.Border;
-                using (var brush = new SolidBrush(fill)) g.FillRectangle(brush, ClientRectangle);
-                using (var pen = new Pen(line, Checked ? 2 : 1))
-                    g.DrawRectangle(pen, 1, 1, Math.Max(0,Width-3), Math.Max(0,Height-3));
+                GlassUi.ControlBackground(g,this);
+                Color ink=GlassUi.SegmentInk(Palette,Checked,Enabled);
+                if (Width<4 || Height<4) return;
+                GlassUi.Segment(g,Rectangle.Inflate(ClientRectangle,-2,-2),Math.Max(9,Font.Height*3/4),
+                    Palette,Checked,hot && Enabled);
                 int icon = Math.Max(18, Font.Height * 4 / 5);
                 int gap = Math.Max(5, icon / 3);
                 int tw = TextRenderer.MeasureText(g,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
@@ -153,8 +164,32 @@ namespace MirrorDesk
                 TextRenderer.DrawText(g, Text, Font, new Rectangle(start,0,Math.Max(0,Width-start-4),Height),ink,
                     TextFormatFlags.VerticalCenter|TextFormatFlags.Left|TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
                 if (Focused && ShowFocusCues)
-                    ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(ClientRectangle,-4,-4),ink,fill);
+                    ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(ClientRectangle,-4,-4),ink,BackColor);
             }
+        }
+    }
+
+    internal sealed class ConsoleSurface : TableLayoutPanel
+    {
+        AppPalette palette = new AppPalette(0,false);
+
+        public ConsoleSurface(int columns,int rows)
+        {
+            ColumnCount=columns; RowCount=rows;
+            Dock=DockStyle.Fill; Margin=Padding.Empty;
+            GrowStyle=TableLayoutPanelGrowStyle.FixedSize;
+            SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint,true);
+        }
+
+        public void ApplyPalette(AppPalette next)
+        {
+            palette=next;
+            Invalidate();
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e)
+        {
+            GlassUi.Pane(e.Graphics,this,palette);
         }
     }
 
@@ -162,55 +197,92 @@ namespace MirrorDesk
     {
         sealed class BrandMark : Control
         {
+            public AppPalette Palette=new AppPalette(0,false);
+
+            public BrandMark()
+            {
+                DoubleBuffered=true;
+                SetStyle(ControlStyles.ResizeRedraw,true);
+            }
+
+            protected override void OnPaintBackground(PaintEventArgs e) { GlassUi.ControlBackground(e.Graphics,this); }
+
             protected override void OnPaint(PaintEventArgs e)
             {
                 var g=e.Graphics;
                 float side=Math.Min(ClientSize.Width,ClientSize.Height);
+                if (side<1) return;
                 g.SmoothingMode=SmoothingMode.AntiAlias;
                 g.TranslateTransform((ClientSize.Width-side)/2,(ClientSize.Height-side)/2);
-                g.ScaleTransform(side/44f,side/44f);
-                using (var bg=new SolidBrush(Color.FromArgb(105,91,164)))
-                using (var monitor=new Pen(Color.White,2.2f))
-                using (var tablet=new Pen(Color.FromArgb(173,241,208),2.2f))
-                {
-                    g.FillEllipse(bg,0,0,44,44);
-                    monitor.LineJoin=tablet.LineJoin=LineJoin.Round;
-                    g.DrawRectangle(monitor,8,11,25,18);
-                    g.DrawLine(monitor,18,29,18,33);
-                    g.DrawLine(monitor,13,33,22,33);
-                    g.FillRectangle(bg,23,18,12,17);
-                    g.DrawRectangle(tablet,23,18,12,17);
-                    g.DrawLine(tablet,27,32,31,32);
+                g.ScaleTransform(side/40f,side/40f);
+                GlassUi.Lens(g,new Rectangle(1,1,38,38),13,Palette,true,false);
+                using (var bg=new SolidBrush(Palette.Action))
+                using (var monitor=new Pen(Color.FromArgb(241,248,255),1.55f)) {
+                    monitor.LineJoin=LineJoin.Round;
+                    using (var desktop=GlassUi.Round(new Rectangle(8,9,22,15),3)) g.DrawPath(monitor,desktop);
+                    g.DrawLine(monitor,16,24,16,29);
+                    g.DrawLine(monitor,12,29,20,29);
+                    using (var phone=GlassUi.Round(new Rectangle(22,16,10,15),3)) {
+                        g.FillPath(bg,phone);
+                        g.DrawPath(monitor,phone);
+                    }
                 }
             }
         }
 
-        readonly Label sessionBadge = Theme.Label("",14, ConsoleColors.Accent, true);
-        TableLayoutPanel dashboard, connection, utility;
+        sealed class ReceptionBadge : GlassLabel
+        {
+            public Color Signal;
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                int size=Math.Max(5,Font.Height/3);
+                int textWidth=TextRenderer.MeasureText(e.Graphics,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
+                int inset=Math.Max(5,Font.Height/3);
+                int x=Math.Max(inset,Width-textWidth-size-3*inset);
+                int height=Math.Min(Height-2,Font.Height+inset);
+                e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
+                var box=new Rectangle(x-inset,(Height-height)/2,Width-x+inset-2,height);
+                if (box.Width>3 && box.Height>3 && !SystemInformation.HighContrast)
+                    using (var pill=GlassUi.Round(box,height/2))
+                    using (var tint=new SolidBrush(Color.FromArgb(34,Signal))) e.Graphics.FillPath(tint,pill);
+                using (var color=new SolidBrush(Signal)) e.Graphics.FillEllipse(color,x,(Height-size)/2,size,size);
+                TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(x+size+6,0,
+                    Math.Max(0,Width-x-size-6),Height),ForeColor,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            }
+        }
+
+        readonly ReceptionBadge sessionBadge = new ReceptionBadge { Dock=DockStyle.Fill, Margin=Padding.Empty };
+        readonly Label airReceiver = GlassUi.Label("",11,Theme.Ink);
+        readonly Button settingsButton = new GlassButton("设置");
+        readonly BrandMark logo = new BrandMark();
+        TableLayoutPanel dashboard, connectionActions;
         Panel viewport;
-        bool compact, arranging, arrangePending;
         DpiLayout consoleDpi;
         int consoleDpiValue=96;
-        readonly ComboBox appearance = Picker();
-        readonly CheckBox darkMode = new CheckBox { Text="深色模式", Dock=DockStyle.Fill, Margin=Padding.Empty };
-        readonly CheckBox showToolbar = new CheckBox { Text="始终显示投屏工具栏", Dock=DockStyle.Fill, Margin=Padding.Empty };
         AppPalette palette = new AppPalette(0,false);
+        AppPalette IGlassHost.GlassPalette { get { return palette; } }
 
         void ChangeAppearance()
         {
             palette=new AppPalette(appearance.SelectedIndex,darkMode.Checked);
             palette.Apply(this,primary);
+            logo.Palette=palette;
+            logo.Invalidate();
+            settingsDialog.ApplyPalette(palette);
             UpdateDashboardStatus();
             preview?.ApplyPalette(palette);
+            Invalidate(true);
         }
 
         internal void ScaleConsole(int dpi)
         {
             consoleDpiValue=dpi;
-            if (!consoleDpi.Apply(dpi)) return;
+            if (!consoleDpi.Apply(dpi,InterfaceScale,TextScale,InterfaceFont)) return;
             var area=Screen.FromControl(this).WorkingArea;
-            MinimumSize=new Size(Math.Min(UiPixels(500),area.Width),Math.Min(UiPixels(310),area.Height));
-            ArrangeConsole(true);
+            MinimumSize=new Size(Math.Min(UiPixels(398),area.Width),Math.Min(UiPixels(300),area.Height));
+            ArrangeConnectionActions();
         }
 
         protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -219,200 +291,153 @@ namespace MirrorDesk
             if (consoleDpi!=null) ScaleConsole(e.DeviceDpiNew);
         }
 
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            ArrangeConnectionActions();
+        }
+
+        void ArrangeConnectionActions()
+        {
+            if (consoleDpi==null) return;
+            bool stacked=ClientSize.Width<UiPixels(463);
+            if (connectionActions.GetRow(primary)!=(stacked ? 1 : 0)) {
+                connectionActions.SuspendLayout();
+                if (stacked) {
+                    connectionActions.SetRow(primary,1);
+                    connectionActions.SetColumnSpan(hint,2);
+                } else {
+                    connectionActions.SetColumnSpan(hint,1);
+                    connectionActions.SetRow(primary,0);
+                }
+                connectionActions.ResumeLayout();
+            }
+            connectionActions.RowStyles[1].Height=stacked ? UiPixels(50) : 0;
+            dashboard.RowStyles[0].Height=UiPixels(stacked ? 266 : 219);
+            dashboard.Height=UiPixels(stacked ? 384 : 337);
+            viewport.AutoScrollMinSize=new Size(0,dashboard.Height);
+        }
+
         void UpdateDashboardStatus()
         {
             string state = closing ? "正在退出" : WaitingForUsb ? "等待重连" : playing ? (hadVideo ? "投屏中" : "等待画面") : listening ? "等待设备" :
                 core == null ? "待配置" : "就绪";
             sessionBadge.Text=state;
-            sessionBadge.BackColor=playing || listening ? palette.Selection : palette.Canvas;
-            sessionBadge.ForeColor=playing || listening ? palette.Accent : palette.Muted;
+            sessionBadge.Signal=playing || listening ? palette.Accent : palette.Action;
+            sessionBadge.ForeColor=palette.Ink;
+            sessionBadge.Invalidate();
         }
+
+        protected override void OnPaintBackground(PaintEventArgs e) { GlassUi.Backdrop(e.Graphics,this,palette); }
 
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            palette.ApplyCaption(this);
+            palette.ApplyCaption(this,true);
             ScaleConsole(DpiLayout.Read(this));
-            ClientSize=new Size(UiPixels(990),UiPixels(632));
-            var area = Screen.FromControl(this).WorkingArea;
-            MinimumSize = new Size(Math.Min(MinimumSize.Width, area.Width),Math.Min(MinimumSize.Height, area.Height));
+            FitConsole();
+        }
+
+        void FitConsole()
+        {
+            var area=Screen.FromControl(this).WorkingArea;
+            ClientSize=new Size(UiPixels(588),UiPixels(406));
             int width=Math.Min(Width,area.Width), height=Math.Min(Height,area.Height);
-            Bounds = new Rectangle(Math.Max(area.Left,Math.Min(Left,area.Right-width)),
+            Bounds=new Rectangle(Math.Max(area.Left,Math.Min(Left,area.Right-width)),
                 Math.Max(area.Top,Math.Min(Top,area.Bottom-height)),width,height);
-            ArrangeConsole(true);
         }
 
         void BuildControlPanel()
         {
             SuspendLayout();
-            Font=Theme.Font(14); ForeColor=ConsoleColors.Ink; BackColor=ConsoleColors.Canvas;
+            Font=Theme.Font(10.5f); ForeColor=ConsoleColors.Ink; BackColor=ConsoleColors.Canvas;
             AutoScaleMode=AutoScaleMode.None;
+            DoubleBuffered=true;
+            SetStyle(ControlStyles.ResizeRedraw,true);
             StartPosition=FormStartPosition.CenterScreen;
-            MinimumSize=new Size(580,360); ClientSize = new Size(990,632);
+            MinimumSize=new Size(398,300); ClientSize=new Size(588,406);
 
-            var page=Theme.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,64,-1);
-            var header=Theme.Grid(4,1); Theme.Cols(header,46,76,-1,122); Theme.Rows(header,-1);
-            header.Name="Header";
-            header.Padding=new Padding(24,0,24,0);
-            var logo=new BrandMark { Dock=DockStyle.Fill, Margin=new Padding(0,10,8,10), TabStop=false };
+            var page=GlassUi.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,67,-1);
+            var header=GlassUi.Grid(4,1); Theme.Cols(header,48,86,-1,81); Theme.Rows(header,-1);
+            header.Padding=new Padding(27,0,27,0);
+            logo.Dock=DockStyle.Fill; logo.Margin=new Padding(0,12,9,12); logo.TabStop=false;
             header.Controls.Add(logo,0,0);
-            header.Controls.Add(Theme.Label("微映",25,Color.White,true),1,0);
-            header.Controls.Add(Theme.Label("投屏控制台",15,Color.FromArgb(187,217,210)),2,0);
-            about.Font=Theme.Font(13); about.Margin=new Padding(0,10,0,10);
-            header.Controls.Add(about,3,0); page.Controls.Add(header,0,0);
+            var brandTitle=GlassUi.Label("微映",17,Theme.Ink,true);
+            brandTitle.Name="BrandTitle";
+            header.Controls.Add(brandTitle,1,0);
+            var subtitle=GlassUi.Label("iPhone / iPad",10,Theme.Muted);
+            subtitle.Name="Muted";
+            header.Controls.Add(subtitle,2,0);
+            settingsButton.Name="OpenSettings";
+            settingsButton.Font=Theme.Font(10.5f,true); settingsButton.Margin=new Padding(0,15,0,14);
+            settingsButton.Click+=delegate { ShowSettings(); };
+            header.Controls.Add(settingsButton,3,0); page.Controls.Add(header,0,0);
 
-            viewport=new Panel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, Name="Canvas" };
-            dashboard=Theme.Grid(2,2); dashboard.Dock=DockStyle.Top;
-            dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,62));
-            dashboard.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,38));
-            Theme.Rows(dashboard,-1,0);
-            connection=BuildConnectionCard(); utility=BuildUtilityColumn();
-            dashboard.Controls.Add(connection,0,0); dashboard.Controls.Add(utility,1,0);
+            viewport=new GlassPanel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, Name="Canvas" };
+            dashboard=GlassUi.Grid(1,3); dashboard.Dock=DockStyle.Top; dashboard.Height=337;
+            dashboard.Padding=new Padding(21,3,21,11);
+            Theme.Cols(dashboard,-1); Theme.Rows(dashboard,219,11,93);
+            dashboard.Controls.Add(BuildConnectionCard(),0,0);
+            dashboard.Controls.Add(BuildSessionCard(),0,2);
             viewport.Controls.Add(dashboard); page.Controls.Add(viewport,0,1);
-            TrackConsoleFocus(dashboard);
             Controls.Add(page);
             consoleDpi=new DpiLayout(this);
+            BuildSettings();
             ResumeLayout(true);
-            viewport.ClientSizeChanged+=delegate {
-                // Changing the rows inside a scrollbar layout can leave its old scroll range in effect.
-                if (arrangePending || !IsHandleCreated || IsDisposed) return;
-                arrangePending=true;
-                BeginInvoke(new Action(delegate {
-                    arrangePending=false;
-                    if (!IsDisposed && !Disposing) ArrangeConsole(false);
-                }));
-            };
-            ArrangeConsole(true);
-        }
-
-        void TrackConsoleFocus(Control parent)
-        {
-            foreach (Control child in parent.Controls)
-            {
-                if (child.TabStop) child.Enter+=delegate {
-                    if (!IsHandleCreated || !viewport.VerticalScroll.Visible) return;
-                    BeginInvoke(new Action(KeepFieldInView));
-                };
-                TrackConsoleFocus(child);
-            }
-        }
-
-        void KeepFieldInView()
-        {
-            if (IsDisposed || !viewport.VerticalScroll.Visible || !viewport.ContainsFocus) return;
-            Control target=ActiveControl;
-            while (target is ContainerControl && ((ContainerControl)target).ActiveControl!=null)
-                target=((ContainerControl)target).ActiveControl;
-            if (target==null || !target.Focused) return;
-            Rectangle box=viewport.RectangleToClient(target.RectangleToScreen(target.ClientRectangle));
-            int shift=box.Top<0 ? box.Top : Math.Max(0,box.Bottom-viewport.ClientSize.Height);
-            if (shift!=0) viewport.AutoScrollPosition=new Point(0,Math.Max(0,-viewport.AutoScrollPosition.Y+shift));
         }
 
         int UiPixels(int value)
         {
-            return DpiLayout.Pixels(value,consoleDpiValue/96f);
+            return DpiLayout.Pixels(value,consoleDpiValue/96f*InterfaceScale);
         }
 
-        void ArrangeConsole(bool force)
+        ConsoleSurface BuildConnectionCard()
         {
-            if (arranging || dashboard==null || viewport==null || viewport.ClientSize.Width<=0) return;
-            bool stack=viewport.ClientSize.Width < UiPixels(830);
-            if (!force && stack==compact) return;
-            arranging=true;
-            dashboard.SuspendLayout();
-            try {
-                compact=stack;
-                dashboard.Padding=new Padding(UiPixels(stack?14:22),UiPixels(18),UiPixels(stack?14:22),UiPixels(16));
-                dashboard.ColumnStyles[0].Width=stack ? 100 : 62;
-                dashboard.ColumnStyles[1].Width=stack ? 0 : 38;
-                // The two cards remain in the same visual/tab order across breakpoints.
-                dashboard.SetCellPosition(utility,stack ? new TableLayoutPanelCellPosition(0,1) : new TableLayoutPanelCellPosition(1,0));
-                dashboard.RowStyles[0].SizeType=SizeType.Absolute;
-                dashboard.RowStyles[0].Height=UiPixels(stack ? 490 : 506);
-                dashboard.RowStyles[1].SizeType=SizeType.Absolute;
-                dashboard.RowStyles[1].Height=stack ? UiPixels(460) : 0;
-                connection.Margin=new Padding(0,0,stack ? 0 : UiPixels(14),0);
-                utility.Margin=new Padding(0,stack ? UiPixels(12) : 0,0,0);
-                dashboard.Height=dashboard.Padding.Vertical + (int)(dashboard.RowStyles[0].Height+dashboard.RowStyles[1].Height);
-                viewport.AutoScrollMinSize=new Size(0,dashboard.Height);
-            } finally { dashboard.ResumeLayout(true); arranging=false; }
-            if (IsHandleCreated) BeginInvoke(new Action(KeepFieldInView));
-        }
-
-        TableLayoutPanel Card()
-        {
-            var card=Theme.Grid(1,1);
-            card.Name="Card"; card.Padding=new Padding(18,10,18,16);
-            return card;
-        }
-
-        TableLayoutPanel BuildConnectionCard()
-        {
-            var card=Card(); card.RowCount=10; Theme.Cols(card,-1);
-            Theme.Rows(card,38,48,33,42,32,43,40,44,-1,46);
-            card.Controls.Add(Theme.Label("连接设备",19,ConsoleColors.Ink,true),0,0);
+            var card=new ConsoleSurface(1,6) { Padding=new Padding(20,13,20,17) };
+            Theme.Cols(card,-1); Theme.Rows(card,29,45,9,39,9,-1);
+            var title=GlassUi.Label("连接设备",13,Theme.Ink,true);
+            card.Controls.Add(title,0,0);
             card.Controls.Add(mode,0,1);
 
-            inputLabel.Font=presetLabel.Font=Theme.Font(13,true);
-            inputLabel.ForeColor=presetLabel.ForeColor=ConsoleColors.Secondary;
-            card.Controls.Add(inputLabel,0,2); card.Controls.Add(input,0,3);
-            quality.Items.AddRange(WirelessProfile.Choices); quality.SelectedIndex=WirelessProfile.DefaultIndex;
-            foreach (var picker in new[]{devices,quality}) {
-                picker.Font=Theme.Font(14); picker.ForeColor=ConsoleColors.Ink; picker.Dock=DockStyle.Top; picker.Margin=Padding.Empty;
-            }
-            name.Font=Theme.Font(14); input.Controls.Add(name);
-            var usbPick=Theme.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,88); Theme.Rows(usbPick,-1);
-            usbPick.Controls.Add(devices,0,0); refresh.Margin=new Padding(8,0,0,0); usbPick.Controls.Add(refresh,1,0);
-            input.Controls.Add(usbPick);
-            card.Controls.Add(presetLabel,0,4);
-            var presets=new Panel{Dock=DockStyle.Fill,Margin=Padding.Empty};
-            var usbMode=Theme.Label("硬件解码优先 · 60 fps 上限",14,ConsoleColors.Ink);
-            usbMode.Name="UsbPreset"; presets.Controls.Add(usbMode); presets.Controls.Add(quality);
-            card.Controls.Add(presets,0,5); card.Controls.Add(audio,0,6);
-            audio.Font=Theme.Font(14); hint.Font=Theme.Font(13); hint.ForeColor=ConsoleColors.Secondary;
-            appearance.Items.AddRange(AppPalette.Names); appearance.SelectedIndex=0;
-            appearance.Name="AppearanceTheme"; appearance.AccessibleName="界面主题"; appearance.FlatStyle=FlatStyle.Flat; appearance.Dock=DockStyle.Top;
-            appearance.Font=darkMode.Font=showToolbar.Font=Theme.Font(12);
-            appearance.Margin=new Padding(0,4,8,0);
-            var style=Theme.Grid(3,1); Theme.Cols(style,118,110,-1); Theme.Rows(style,-1);
-            style.Controls.Add(appearance,0,0); style.Controls.Add(darkMode,1,0); style.Controls.Add(showToolbar,2,0);
-            card.Controls.Add(style,0,7);
-            hint.Name="Muted"; card.Controls.Add(hint,0,8);
-            primary.Font=Theme.Font(14,true); primary.BackColor=ConsoleColors.Accent;
-            primary.FlatAppearance.BorderColor=ConsoleColors.Accent;
-            card.Controls.Add(primary,0,9);
+            devices.Font=Theme.Font(11);
+            devices.AccessibleName="USB 设备";
+            devices.Dock=DockStyle.None;
+            devices.Anchor=AnchorStyles.Left | AnchorStyles.Right;
+            var usbPick=GlassUi.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,81); Theme.Rows(usbPick,-1);
+            refresh.Font=Theme.Font(10.5f); refresh.Margin=new Padding(8,0,0,0);
+            usbPick.Controls.Add(devices,0,0); usbPick.Controls.Add(refresh,1,0);
+            input.Controls.Add(airReceiver); input.Controls.Add(usbPick);
+            card.Controls.Add(input,0,3);
+
+            hint.Font=Theme.Font(10); hint.Name="Muted";
+            hint.TextChanged+=delegate { detail.SetToolTip(hint,hint.Text); };
+            connectionActions=GlassUi.Grid(2,2);
+            Theme.Cols(connectionActions,-1,187); Theme.Rows(connectionActions,-1,0);
+            hint.Margin=new Padding(0,0,12,0);
+            connectionActions.Controls.Add(hint,0,0);
+            primary.Font=Theme.Font(11,true);
+            primary.Margin=new Padding(0,7,0,7);
+            connectionActions.Controls.Add(primary,1,0);
+            card.Controls.Add(connectionActions,0,5);
             return card;
         }
 
-        TableLayoutPanel BuildUtilityColumn()
+        ConsoleSurface BuildSessionCard()
         {
-            var tools=Theme.Grid(1,2); Theme.Cols(tools,-1); Theme.Rows(tools,178,-1);
-            var session=Card(); session.RowCount=3; Theme.Cols(session,-1); Theme.Rows(session,39,-1,43);
-            var heading=Theme.Grid(2,1); Theme.Cols(heading,-1,88); Theme.Rows(heading,-1);
-            heading.Controls.Add(Theme.Label("接收状态",17,ConsoleColors.Ink,true),0,0);
-            sessionBadge.TextAlign=ContentAlignment.MiddleCenter;
-            sessionBadge.Margin=new Padding(0,6,0,6);
-            heading.Controls.Add(sessionBadge,1,0); session.Controls.Add(heading,0,0);
-            footer.Font=Theme.Font(13); footer.ForeColor=ConsoleColors.Secondary;
-            footer.Name="Muted"; footer.UseMnemonic=false; session.Controls.Add(footer,0,1);
-            session.Controls.Add(showPreview,0,2);
-            session.Margin=new Padding(0,0,0,12);
-            tools.Controls.Add(session,0,0);
-
-            var files=Card(); files.RowCount=4; Theme.Cols(files,-1); Theme.Rows(files,44,-1,41,44);
-            pathCaption.Font=Theme.Font(16,true); pathCaption.ForeColor=ConsoleColors.Ink;
-            files.Controls.Add(pathCaption,0,0);
-            componentPath.AccessibleName="投屏组件目录";
-            componentPath.ReadOnly=true; componentPath.Multiline=componentPath.WordWrap=true;
-            componentPath.ScrollBars=ScrollBars.Vertical; componentPath.Font=Theme.Font(13);
-            componentPath.Dock=DockStyle.Fill; componentPath.Margin=new Padding(0,4,0,10);
-            componentPath.BackColor=ConsoleColors.Canvas; componentPath.ForeColor=ConsoleColors.Ink;
-            componentPath.BorderStyle=BorderStyle.FixedSingle;
-            files.Controls.Add(componentPath,0,1); files.Controls.Add(openPath,0,2);
-            driver.Margin=new Padding(0,6,0,0); files.Controls.Add(driver,0,3);
-            tools.Controls.Add(files,0,1);
-            return tools;
+            var card=new ConsoleSurface(2,2) { Padding=new Padding(20,9,20,14) };
+            Theme.Cols(card,-1,152); Theme.Rows(card,28,-1);
+            var title=GlassUi.Label("接收状态",11.5f,Theme.Ink,true);
+            card.Controls.Add(title,0,0);
+            sessionBadge.Font=Theme.Font(10.5f,true);
+            card.Controls.Add(sessionBadge,1,0);
+            footer.Font=Theme.Font(10.5f);
+            footer.Name="Muted"; footer.UseMnemonic=false;
+            footer.Margin=new Padding(0,0,9,0);
+            card.Controls.Add(footer,0,1);
+            showPreview.Font=Theme.Font(10);
+            showPreview.Margin=new Padding(0,3,0,2);
+            card.Controls.Add(showPreview,1,1);
+            return card;
         }
     }
 }

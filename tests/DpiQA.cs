@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using MirrorDesk;
@@ -33,25 +34,36 @@ static class DpiQA
         try {
             Application.EnableVisualStyles();
             using (var main=new MainForm(null)) {
+                var settings=(SettingsDialog)typeof(MainForm).GetField("settingsDialog",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
                 foreach (int dpi in new[]{96,120,144,192,96}) {
                     main.ScaleConsole(dpi);
-                    main.ClientSize=new Size(Math.Min(1280,1040*dpi/96),720);
+                    main.ClientSize=new Size(620*dpi/96,440);
                     main.PerformLayout();
                     var viewport=main.Controls.Find("Canvas",true).Single();
                     viewport.PerformLayout();
                     var dashboard=viewport.Controls[0];
                     dashboard.PerformLayout();
                     foreach (Control card in dashboard.Controls) card.PerformLayout();
-                    foreach (string label in new[]{"USB 数据线","深色模式","始终显示投屏工具栏","工具 / 关于"}) {
+                    foreach (string label in new[]{"USB 数据线","无线 AirPlay","设置","显示投屏窗口"}) {
                         var field=FindText(main,label);
                         Check(field!=null && field.ClientSize.Height>=field.Font.Height+2 &&
                             field.Parent.ClientRectangle.Contains(field.Bounds),label+" fits at "+dpi+" DPI");
                     }
                     Check(dpi<144 || dashboard.Height>viewport.ClientSize.Height,
                         "compact dashboard scrolls when needed at "+dpi+" DPI");
+                    settings.ApplyInterface(.9f,1.2f,"Segoe UI");
+                    settings.ScaleSettings(dpi);
+                    settings.ClientSize=new Size(434*dpi/96,320*dpi/96);
+                    settings.PerformLayout();
+                    foreach (string label in new[]{"投屏","外观","组件","深色模式","始终显示投屏工具栏"}) {
+                        var field=FindText(settings,label);
+                        Check(field!=null && field.Font.Name=="Segoe UI" && field.Height>=field.Font.Height+2 &&
+                            field.Width>=TextRenderer.MeasureText(label,field.Font).Width,
+                            label+" fits small settings at 120% text and "+dpi+" DPI");
+                    }
                 }
-                var dark=(CheckBox)FindText(main,"深色模式");
-                var theme=(ComboBox)main.Controls.Find("AppearanceTheme",true).Single();
+                var dark=(CheckBox)FindText(settings,"深色模式");
+                var theme=(ComboBox)settings.Controls.Find("AppearanceTheme",true).Single();
                 Color previous=main.BackColor;
                 theme.SelectedIndex=1;
                 Check(main.BackColor!=previous,"selecting Space recolors the control panel");

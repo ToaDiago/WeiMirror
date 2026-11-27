@@ -85,7 +85,7 @@ if ($ApplicationExe) {
     $sdkFixture = Join-Path $BuildRoot 'AirFixture.dll'
     & $asm /QUIET /DLL /X64 /PE64 "/OUTPUT:$sdkFixture" (Join-Path $PSScriptRoot 'SdkExports.il')
     if ($LASTEXITCODE) { throw "SDK fixture assembly failed with $LASTEXITCODE" }
-    foreach ($scenario in 'normal','no-key','pipe-loss','1080p120','2k60') {
+    foreach ($scenario in 'normal','no-key','pipe-loss','retired-profile','2k60') {
         & $airHostTest ([IO.Path]::GetFullPath($ApplicationExe)) $sdkFixture $scenario
         if ($LASTEXITCODE) { throw "AirPlay host integration failed for $scenario with $LASTEXITCODE" }
     }

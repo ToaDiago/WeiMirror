@@ -12,21 +12,20 @@ using System.Windows.Forms;
 
 namespace MirrorDesk
 {
-    internal sealed partial class MainForm : Form
+    internal sealed partial class MainForm : Form, IGlassHost
     {
-        readonly Label footer = Theme.Label("",14,Theme.Muted);
-        readonly Label inputLabel = Theme.Label("",14,Theme.Ink,true), presetLabel = Theme.Label("",14,Theme.Ink,true);
-        readonly Label hint = Theme.Label("",13,Theme.Muted), pathCaption = Theme.Label("",14,Theme.Ink,true);
-        readonly Button primary = Theme.Button("",true), refresh = Theme.Button("刷新"), driver = Theme.Button("USB 驱动管理…");
-        readonly Button about = Theme.Button("工具 / 关于"), openPath = Theme.Button("打开目录"), showPreview = Theme.Button("显示投屏窗口");
+        readonly Label footer = GlassUi.Label("",10.5f,Theme.Muted);
+        readonly Label hint = GlassUi.Label("",10.5f,Theme.Muted), pathCaption = GlassUi.Label("",11,Theme.Ink,true);
+        readonly Button primary = new GlassButton("",true), refresh = new GlassButton("刷新"), driver = new GlassButton("USB 驱动管理…");
+        readonly Button about = new GlassButton("工具与关于"), openPath = new GlassButton("打开目录"), showPreview = new GlassButton("显示投屏窗口");
         readonly TextBox componentPath = new TextBox { ReadOnly=true, Multiline=true, WordWrap=true };
         readonly TransportPicker mode = new TransportPicker();
         readonly ComboBox devices = Picker(), quality = Picker();
         readonly TextBox name = new TextBox { Text = "WeiMirror", MaxLength = 60, Dock = DockStyle.Top, Margin = Padding.Empty };
-        readonly CheckBox audio = new CheckBox { Text = "在电脑上播放声音", Checked = true, Dock = DockStyle.Fill, Margin = Padding.Empty };
+        readonly CheckBox audio = new GlassToggle("在电脑上播放声音") { Checked = true };
         PreviewWindow preview;
         bool previewStopQueued;
-        readonly Panel input = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        readonly Panel input = new GlassPanel { Dock = DockStyle.Fill, Margin = Padding.Empty };
         readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer { Interval = 700 };
         readonly System.Windows.Forms.Timer preferenceTimer = new System.Windows.Forms.Timer { Interval = 500 };
         readonly PreferencesStore preferencesStore;
@@ -49,7 +48,7 @@ namespace MirrorDesk
 
         static ComboBox Picker()
         {
-            return new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top,
+            return new PalettePicker { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top,
                 IntegralHeight = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty };
         }
         public MainForm(string initialEngine) : this(initialEngine, null) {}
@@ -69,10 +68,18 @@ namespace MirrorDesk
                 appearance.SelectedIndex=saved.ThemeIndex;
                 darkMode.Checked=saved.DarkMode;
                 alwaysShowToolbar=showToolbar.Checked=saved.AlwaysShowToolbar;
+                int fontIndex=interfaceFont.FindStringExact(saved.InterfaceFont);
+                interfaceFont.SelectedIndex=Math.Max(0,fontIndex);
+                textPercent.SelectedIndex=(saved.TextPercent-90)/10;
+                interfaceSize.SelectedIndex=saved.InterfaceSize;
             }
             ChangeAppearance();
+            ChangeInterface(false);
             appearance.SelectedIndexChanged+=delegate { ChangeAppearance(); PreferencesChanged(); };
             darkMode.CheckedChanged+=delegate { ChangeAppearance(); PreferencesChanged(); };
+            interfaceFont.SelectedIndexChanged+=delegate { ChangeInterface(false); PreferencesChanged(); };
+            textPercent.SelectedIndexChanged+=delegate { ChangeInterface(false); PreferencesChanged(); };
+            interfaceSize.SelectedIndexChanged+=delegate { ChangeInterface(true); PreferencesChanged(); };
             showToolbar.CheckedChanged+=delegate {
                 alwaysShowToolbar=showToolbar.Checked;
                 if (preview!=null) preview.AlwaysShowToolbar=alwaysShowToolbar;
@@ -83,7 +90,7 @@ namespace MirrorDesk
             UpdateControls();
             mode.SelectedIndexChanged += async delegate { if (!changing) { PreferencesChanged(); await ChangeMode(); } };
             quality.SelectedIndexChanged += delegate { PreferencesChanged(); };
-            name.TextChanged += delegate { PreferencesChanged(); };
+            name.TextChanged += delegate { UpdateAirReceiverLabel(); PreferencesChanged(); };
             refresh.Click += async delegate { await ActionAsync(() => Scan(true)); };
             primary.Click += async delegate { await ActionAsync(PrimaryAction); };
             devices.SelectedIndexChanged += delegate { UpdateControls(); ShowSelectedUsbDiagnosis(); };
@@ -125,7 +132,8 @@ namespace MirrorDesk
             var next=new UserPreferences {
                 Wireless=Wireless, ReceiverName=name.Text, QualityIndex=quality.SelectedIndex,
                 PlayAudio=audio.Checked, AlwaysOnTop=pinned, PreviewLayout=previewLayout,
-                ThemeIndex=appearance.SelectedIndex, DarkMode=darkMode.Checked, AlwaysShowToolbar=alwaysShowToolbar
+                ThemeIndex=appearance.SelectedIndex, DarkMode=darkMode.Checked, AlwaysShowToolbar=alwaysShowToolbar,
+                InterfaceFont=InterfaceFont, TextPercent=TextPercent, InterfaceSize=interfaceSize.SelectedIndex
             };
             preferencesDirty=!preferencesStore.TrySave(next);
             if (preferencesDirty && !closing) footer.Text="当前设置已生效，写入本机偏好文件失败。";
@@ -137,10 +145,8 @@ namespace MirrorDesk
             var usbPick = input.Controls["UsbPick"];
             if (usbPick == null) return;
             bool wifi = Wireless;
-            usbPick.Visible = !wifi; name.Visible = wifi; quality.Visible = wifi;
-            quality.Parent.Controls["UsbPreset"].Visible = !wifi;
-            inputLabel.Text = wifi ? "接收端名称" : "USB 设备";
-            presetLabel.Text = wifi ? "无线规格" : "预览模式";
+            usbPick.Visible = !wifi; airReceiver.Visible = wifi;
+            UpdateAirReceiverLabel();
             mode.Enabled = !busy && !closing;
             bool sessionRequested = playing || WaitingForUsb;
             refresh.Enabled = core != null && !busy && !sessionRequested;
@@ -150,9 +156,9 @@ namespace MirrorDesk
             primary.Enabled = !busy && !closing && (core == null || wifi || sessionRequested || devices.SelectedItem is Device);
             primary.Text = core == null ? "准备投屏组件…" : WaitingForUsb ? "停止并取消重连" : playing || listening ? "停止接收" : wifi ? "开启 AirPlay 接收" : "开始 USB 投屏";
             driver.Enabled = engineRoot != null && !busy && !sessionRequested;
-            driver.Visible = !wifi;
-            hint.Text = wifi ? "两台设备连接同一局域网。Windows 询问时，允许接收组件访问专用网络。" : "用数据线连接并解锁 iPad，首次连接时点「信任此电脑」。";
+            hint.Text = wifi ? "同一网络内，打开设备上的「屏幕镜像」。" : "连接并解锁，首次选择「信任此电脑」。";
             showPreview.Enabled = preview != null && !preview.IsDisposed && !closing;
+            settingsButton.Enabled = !closing;
             string path = engineRoot ?? RuntimePack.ComponentDownloadDirectory;
             pathCaption.Text = engineRoot == null ? "组件下载目录" : "当前组件目录";
             if (!String.Equals(componentPath.Text,path,StringComparison.Ordinal)) {
@@ -161,6 +167,11 @@ namespace MirrorDesk
             }
             openPath.Enabled = Directory.Exists(path);
             UpdateDashboardStatus();
+        }
+
+        void UpdateAirReceiverLabel()
+        {
+            airReceiver.Text="接收端名称  " + name.Text.Trim();
         }
 
         void OpenComponentFolder()
@@ -283,17 +294,19 @@ namespace MirrorDesk
         }
         internal string ViewToken()
         {
-            return String.Join(".", mode.SelectedIndex, quality.SelectedIndex, audio.Checked ? 1 : 0,
+            return String.Join(".", mode.SelectedIndex, ((WirelessProfile)quality.SelectedItem).Id, audio.Checked ? 1 : 0,
                 Convert.ToBase64String(Encoding.UTF8.GetBytes(name.Text)), pinned ? 1 : 0);
         }
         internal void RestoreView(string token)
         {
             if (String.IsNullOrEmpty(token) || token.Length > 512) return;
             string[] bits = token.Split('.');
-            int transport, preset;
+            int transport, profileId;
             if ((bits.Length!=4 && bits.Length!=5) || !Int32.TryParse(bits[0],out transport) || transport<0 || transport>1 ||
-                !Int32.TryParse(bits[1],out preset) || preset<0 || preset>=quality.Items.Count ||
+                !Int32.TryParse(bits[1],out profileId) ||
                 (bits[2]!="1" && bits[2]!="0") || (bits.Length==5 && bits[4]!="1" && bits[4]!="0")) return;
+            int preset=WirelessProfile.IndexFromSavedId(profileId);
+            if (preset<0) return;
             string receiver;
             try { receiver=Encoding.UTF8.GetString(Convert.FromBase64String(bits[3])); } catch (FormatException) { return; }
             changing=true;
@@ -340,7 +353,7 @@ namespace MirrorDesk
             if (playing || listening || WaitingForUsb) { await StopReception(); return; }
             if (Wireless) {
                 string receiver = name.Text.Trim();
-                if (receiver.Length == 0) { footer.Text = "请填写一个接收端名称。"; name.Focus(); return; }
+                if (receiver.Length == 0) { footer.Text = "请在「设置 → 投屏」中填写接收端名称。"; return; }
                 var profile=(WirelessProfile)quality.SelectedItem;
                 footer.Text = "正在启动 AirPlay 接收…";
                 await OnCore(() => core.StartWireless(receiver,profile.Width,profile.Height,profile.Fps));
@@ -530,7 +543,7 @@ namespace MirrorDesk
         }
         void ShowAbout()
         {
-            using (var form = new ToolsDialog(palette)) form.ShowDialog(this);
+            using (var form = new ToolsDialog(palette)) form.ShowDialog(settingsDialog);
         }
         async void OnClosing(object sender,FormClosingEventArgs e)
         {
@@ -552,6 +565,7 @@ namespace MirrorDesk
         protected override void Dispose(bool disposing)
         {
             if (disposing) {
+                settingsDialog?.Dispose();
                 preferenceTimer.Dispose(); timer.Dispose(); detail.Dispose(); serial.Dispose();
             }
             base.Dispose(disposing);

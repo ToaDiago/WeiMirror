@@ -10,6 +10,7 @@ namespace MirrorDesk
 {
     internal sealed class UserPreferences
     {
+        public const int DefaultTextPercent = 100, DefaultInterfaceSize = 1;
         public bool Wireless { get; set; }
         public bool PlayAudio { get; set; } = true;
         public bool AlwaysOnTop { get; set; }
@@ -19,6 +20,12 @@ namespace MirrorDesk
         public bool AlwaysShowToolbar { get; set; }
         public string ReceiverName { get; set; } = "WeiMirror";
         public string PreviewLayout { get; set; } = "";
+        public string InterfaceFont { get; set; } = "";
+        public int TextPercent { get; set; } = DefaultTextPercent;
+        public int InterfaceSize { get; set; } = DefaultInterfaceSize;
+
+        public static bool ValidTextPercent(int value) { return value>=90 && value<=120 && value%10==0; }
+        public static bool ValidInterfaceSize(int value) { return value>=0 && value<=2; }
     }
 
     internal sealed class PreferencesStore
@@ -82,8 +89,21 @@ namespace MirrorDesk
                                     if (value == "airplay" || value == "usb") prefs.Wireless = value == "airplay";
                                     break;
                                 case "quality":
-                                    if (Int32.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out index) && ValidQuality(index))
-                                        prefs.QualityIndex = index;
+                                    if (Int32.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out index)) {
+                                        int quality=WirelessProfile.IndexFromSavedId(index);
+                                        if (quality>=0) prefs.QualityIndex=quality;
+                                    }
+                                    break;
+                                case "interfaceFont":
+                                    prefs.InterfaceFont=SafeFont(value);
+                                    break;
+                                case "textPercent":
+                                    if (Int32.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out index) && UserPreferences.ValidTextPercent(index))
+                                        prefs.TextPercent=index;
+                                    break;
+                                case "interfaceSize":
+                                    if (Int32.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out index) && UserPreferences.ValidInterfaceSize(index))
+                                        prefs.InterfaceSize=index;
                                     break;
                                 case "audio":
                                     if (Boolean.TryParse(value, out flag)) prefs.PlayAudio = flag;
@@ -112,6 +132,14 @@ namespace MirrorDesk
         }
 
         static bool ValidQuality(int index) { return index >= 0 && index < WirelessProfile.Choices.Length; }
+
+        static string SafeFont(string value)
+        {
+            value=(value ?? "").Trim();
+            if (value.Length>128) return "";
+            foreach (char c in value) if (Char.IsControl(c)) return "";
+            return value;
+        }
 
         static string SafeLayout(string value)
         {
@@ -144,7 +172,10 @@ namespace MirrorDesk
                     "dark=" + prefs.DarkMode,
                     "toolbar=" + prefs.AlwaysShowToolbar,
                     "transport=" + (prefs.Wireless ? "airplay" : "usb"),
-                    "quality=" + (ValidQuality(prefs.QualityIndex) ? prefs.QualityIndex : WirelessProfile.DefaultIndex).ToString(CultureInfo.InvariantCulture),
+                    "quality=" + WirelessProfile.Choices[ValidQuality(prefs.QualityIndex) ? prefs.QualityIndex : WirelessProfile.DefaultIndex].Id.ToString(CultureInfo.InvariantCulture),
+                    "interfaceFont=" + SafeFont(prefs.InterfaceFont),
+                    "textPercent=" + (UserPreferences.ValidTextPercent(prefs.TextPercent) ? prefs.TextPercent : UserPreferences.DefaultTextPercent).ToString(CultureInfo.InvariantCulture),
+                    "interfaceSize=" + (UserPreferences.ValidInterfaceSize(prefs.InterfaceSize) ? prefs.InterfaceSize : UserPreferences.DefaultInterfaceSize).ToString(CultureInfo.InvariantCulture),
                     "audio=" + prefs.PlayAudio,
                     "topmost=" + prefs.AlwaysOnTop,
                     "name=" + SafeName(prefs.ReceiverName),

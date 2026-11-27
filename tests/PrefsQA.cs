@@ -71,6 +71,18 @@ internal static class PrefsQA
             var appearance=store.Load();
             Check(appearance.QualityIndex==0 && appearance.ThemeIndex==1 && appearance.DarkMode && appearance.AlwaysShowToolbar,
                 "new format preserves explicitly selected 1080p60, Space, dark mode and toolbar choice");
+            File.WriteAllText(file,"format=2\nquality=4\n");
+            var replacement=WirelessProfile.Choices[store.Load().QualityIndex];
+            Check(replacement.Height==1080 && replacement.Fps==60,"retired 1080p120 selection falls back to 1080p60");
+            File.WriteAllText(file,"format=2\nquality=5\n");
+            var retained=WirelessProfile.Choices[store.Load().QualityIndex];
+            Check(retained.Height==1440 && retained.Fps==60,"existing 2K60 selection keeps its stored identity");
+            Check(store.TrySave(new UserPreferences { InterfaceFont="Segoe UI", TextPercent=110, InterfaceSize=2 }) &&
+                store.Load().InterfaceFont=="Segoe UI" && store.Load().TextPercent==110 && store.Load().InterfaceSize==2,
+                "font, text percent and interface size persist independently");
+            Check(store.TrySave(new UserPreferences { InterfaceFont="Segoe UI\nquality=3", TextPercent=200, InterfaceSize=8 }) &&
+                store.Load().InterfaceFont=="" && store.Load().TextPercent==100 && store.Load().InterfaceSize==1 &&
+                store.Load().QualityIndex==WirelessProfile.DefaultIndex,"invalid appearance values safely fall back to defaults");
             const string placement="1|DISPLAY1|210|110|980|560";
             Check(store.TrySave(new UserPreferences { QualityIndex=3, PreviewLayout=placement }) &&
                   store.Load().QualityIndex==3 && store.Load().PreviewLayout==placement &&

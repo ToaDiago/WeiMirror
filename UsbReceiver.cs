@@ -244,7 +244,7 @@ namespace MirrorDesk
                 var options = new CaptureOptions
                 {
                     Size = (uint)Marshal.SizeOf(typeof(CaptureOptions)), Version = SupportedVersion,
-                    TargetFps = device.Wireless && wirelessFps == 120 ? 120u : 60u, PlayAudio = audio ? 1 : 0, AudioVolume = 1.0f,
+                    TargetFps = 60u, PlayAudio = audio ? 1 : 0, AudioVolume = 1.0f,
                     DecoderPreference = device.Wireless ? 0u : 1u
                 };
                 // USB creation performs an exact-device preflight inside the selected backend.

@@ -39,7 +39,7 @@ namespace MirrorDesk
             save.Click+=delegate { BundledFiles.Export(this,true); };
             grid.Controls.Add(open,0,2);
             grid.Controls.Add(save,0,3);
-            grid.Controls.Add(Theme.Label("微映  1.4",18,ConsoleColors.Ink,true),0,4);
+            grid.Controls.Add(Theme.Label("微映  1.4.4",18,ConsoleColors.Ink,true),0,4);
             grid.Controls.Add(Theme.Label("Windows USB 与 AirPlay 投屏接收端，使用 iPhoneMirror v1.8.3 组件。程序附有完整源码、构建脚本和 GPL-3.0-only 许可证。",13,ConsoleColors.Secondary),0,5);
             var source=Theme.Button("导出完整源码 ZIP…");
             source.Name="ExportSource";

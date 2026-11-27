@@ -28,6 +28,148 @@ static class GuiQA
     static bool ShowsPath(Control target,string path) {
         return Descendants(target).Any(c=>c.Visible && c.Text.IndexOf(path,StringComparison.OrdinalIgnoreCase)>=0);
     }
+    static void ReviewImage(Form window,string name) {
+        string directory=Environment.GetEnvironmentVariable("WEIMIRROR_QA_SCREENSHOTS");
+        if (String.IsNullOrEmpty(directory)) return;
+        Directory.CreateDirectory(directory);
+        using (var bitmap=CaptureWindow(window))
+            bitmap.Save(Path.Combine(directory,name+".png"),System.Drawing.Imaging.ImageFormat.Png);
+    }
+    static Bitmap CaptureWindow(Form window) {
+        window.Update();
+        var bitmap=new Bitmap(window.Width,window.Height,System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+        try {
+            using (var graphics=Graphics.FromImage(bitmap)) {
+                var dc=graphics.GetHdc();
+                try { if (!PrintWindow(window.Handle,dc,0)) throw new InvalidOperationException("Native window capture failed: "+window.Text); }
+                finally { graphics.ReleaseHdc(dc); }
+            }
+            return bitmap;
+        } catch {
+            bitmap.Dispose();
+            throw;
+        }
+    }
+    [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr window,IntPtr dc,uint flags);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr window,int index);
+    [DllImport("user32.dll")] static extern bool IsWindowEnabled(IntPtr window);
+    static Rectangle PixelsFor(Form window,Control child) {
+        var screen=child.RectangleToScreen(child.ClientRectangle);
+        screen.Offset(-window.Left,-window.Top);
+        return screen;
+    }
+    static void CheckPaint(Form window,params Control[] controls) {
+        using (var bitmap=CaptureWindow(window)) {
+            foreach (Control child in controls) {
+                Rectangle area=PixelsFor(window,child);
+                Check(new Rectangle(Point.Empty,bitmap.Size).Contains(area),"native capture contains "+child.Text);
+                int black=0, samples=0;
+                for (int y=area.Top;y<area.Bottom;y+=3)
+                    for (int x=area.Left;x<area.Right;x+=3) {
+                        var color=bitmap.GetPixel(x,y);
+                        if (color.R<12 && color.G<12 && color.B<12) black++;
+                        samples++;
+                    }
+                Check(samples>0 && black*20<samples,"native paint has no black backing under "+child.Text);
+            }
+        }
+    }
+    static void CheckQualityFace(Form window,ComboBox quality) {
+        using (var bitmap=CaptureWindow(window)) {
+            var area=PixelsFor(window,quality);
+            // Avoid borders and the arrow. Confirm the glyphs of the selected item
+            // reach the native window capture, beyond checking its Text property.
+            area.Inflate(-6,-5);
+            area.Width=Math.Min(area.Width/2,180);
+            int ink=0;
+            for (int y=area.Top;y<area.Bottom;y++)
+                for (int x=area.Left;x<area.Right;x++) {
+                    var color=bitmap.GetPixel(x,y);
+                    if (color.R<90 && color.G<100 && color.B<120) ink++;
+                }
+            Check(ink>area.Height && quality.Text.Contains("高清自动"),"selected quality text reaches the native combo face");
+        }
+    }
+    static void Settings(Action<Form> inspect,bool viaShortcut=false) {
+        bool opened=false;
+        Exception failure=null;
+        using (var timer=new System.Windows.Forms.Timer { Interval=80 }) {
+            timer.Tick+=delegate {
+                var dialog=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.GetType().Name=="SettingsDialog" && f.Visible);
+                if (dialog==null) return;
+                opened=true;
+                timer.Stop();
+                try { inspect(dialog); }
+                catch (Exception error) { failure=error; }
+                finally { dialog.DialogResult=DialogResult.Cancel; }
+            };
+            timer.Start();
+            if (viaShortcut) Key(form,Keys.Control|Keys.Oemcomma);
+            else ((Button)Named(form,"OpenSettings")).PerformClick();
+        }
+        if (failure!=null) throw failure;
+        Check(opened && form.Enabled,"settings opens from the header and returns to the console");
+    }
+    static void SettingsPage(Form dialog,int section) {
+        ((Button)Named(dialog,"SettingsSection"+section)).PerformClick();
+        Application.DoEvents();
+    }
+
+    static void VerifyHighDpiRepaint(Control mode,Button primary) {
+        const int testDpi=192;
+        var size=form.ClientSize;
+        int originalDpi=form.DeviceDpi;
+        ((Button)Named(form,"AirPlayMode")).PerformClick();
+        Idle();
+        Call(form,"ScaleConsole",testDpi);
+        form.ClientSize=new Size(1176,840);
+        form.PerformLayout();
+        CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),primary);
+        ReviewImage(form,"console-wireless-200");
+        Settings(dialog=>{
+            SettingsPage(dialog,0);
+            var originalSize=dialog.ClientSize;
+            try {
+                Call(dialog,"ScaleSettings",testDpi);
+                dialog.ClientSize=new Size(1016,738);
+                dialog.PerformLayout();
+                Application.DoEvents();
+                var quality=(ComboBox)Named(dialog,"AirPlayQuality");
+                CheckPaint(dialog,Named(dialog,"SettingsSection0"),Named(dialog,"SettingsSection1"),
+                    Field<CheckBox>(form,"audio"),Field<CheckBox>(form,"showToolbar"),(Control)dialog.CancelButton);
+                CheckQualityFace(dialog,quality);
+                ReviewImage(dialog,"settings-casting-200");
+                Check(dialog.Owner==form && !IsWindowEnabled(form.Handle),"the native console is disabled while its settings dialog is open");
+                CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),
+                    primary,Field<Button>(form,"showPreview"));
+                ReviewImage(form,"console-with-settings-open-200");
+            } finally {
+                Call(dialog,"ScaleSettings",originalDpi);
+                dialog.ClientSize=originalSize;
+            }
+        },true);
+        Call(form,"ScaleConsole",originalDpi);
+        form.ClientSize=size;
+        SelectMode(mode,0);
+        Idle();
+    }
+
+    static void VerifyToolsDialog(Form settings) {
+        bool opened=false;
+        using (var timer=new System.Windows.Forms.Timer { Interval=50 }) {
+            timer.Tick+=delegate {
+                var tools=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.GetType().Name=="ToolsDialog");
+                if (tools==null) return;
+                timer.Stop();
+                opened=tools.Owner==settings && Named(tools,"OpenLatencyTest").Enabled &&
+                    Named(tools,"ExportLatencyTest").Enabled && Named(tools,"ExportSource").Enabled;
+                tools.Close();
+            };
+            timer.Start();
+            Field<Button>(form,"about").PerformClick();
+        }
+        Check(opened,"components opens Tools and About with latency and source actions");
+    }
     static string StatText() { var win=Preview(); return win==null ? "" : Field<Label>(win,"stats").Text; }
     static bool OverlayShown() { var win=Preview(); return win!=null && Field<Label>(win,"overlay").Visible; }
     static void SelectMode(Control picker,int index) {
@@ -117,8 +259,45 @@ static class GuiQA
             Button primary = Field<Button>(form,"primary");
             var mode = Field<Control>(form,"mode");
             string localPacks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WeiMirror","packs");
-            Check(Preview()==null && ShowsPath(form,localPacks),"main panel shows the component download directory before first setup");
-            Check(primary.Font.SizeInPoints>=12 && mode.Font.SizeInPoints>=12 && Field<CheckBox>(form,"audio").Font.SizeInPoints>=12,"connection controls use readable fonts of at least 12 pt");
+            Check(Preview()==null && !ShowsPath(form,localPacks) && !form.Contains(Field<ComboBox>(form,"quality")),
+                "main panel keeps component paths and quality controls in settings");
+            Check(primary.Font.SizeInPoints>=10 && primary.Font.SizeInPoints<12 && mode.Font.SizeInPoints<12,
+                "console uses compact default type at 100 percent");
+            Settings(dialog=>{
+                Check(dialog.Opacity==1 && !dialog.AllowTransparency && (GetWindowLong(dialog.Handle,-20)&0x00080000)==0,
+                    "settings remains a normal opaque window while open");
+                Check(Descendants(form).Concat(Descendants(dialog)).Where(c=>c.Visible).All(c=>c.BackColor.A==255),
+                    "visible settings controls have explicit opaque backgrounds");
+                var quality=(ComboBox)Named(dialog,"AirPlayQuality");
+                Check(quality.Visible && quality.Items.Count==6 && quality.Items.Cast<object>().All(item=>!item.ToString().Contains("120")),
+                    "AirPlay settings exposes six profiles at up to 60 fps");
+                quality.Focus();
+                quality.DroppedDown=true;
+                Check(quality.DroppedDown,"glass picker opens the native AirPlay list");
+                quality.DroppedDown=false;
+                SettingsPage(dialog,2);
+                Check(ShowsPath(dialog,localPacks),"components settings shows the download directory before setup");
+                SettingsPage(dialog,1);
+                var scale=(ComboBox)Named(dialog,"TextPercent");
+                var size=(ComboBox)Named(dialog,"InterfaceSize");
+                var fonts=(ComboBox)Named(dialog,"InterfaceFont");
+                Check(scale.Text=="100%" && size.Text=="中","text and interface size start at 100 percent");
+                ReviewImage(dialog,"settings");
+                float fontBefore=primary.Font.Size;
+                int widthBefore=form.ClientSize.Width;
+                scale.SelectedIndex=2;
+                size.SelectedIndex=2;
+                fonts.SelectedIndex=fonts.FindStringExact("Segoe UI");
+                Check(primary.Font.Size>fontBefore && form.ClientSize.Width>widthBefore && primary.Font.Name=="Segoe UI",
+                    "font, type size and interface size update the console");
+                Field<CheckBox>(form,"darkMode").Checked=true;
+                ReviewImage(dialog,"settings-dark");
+                Field<CheckBox>(form,"darkMode").Checked=false;
+                size.SelectedIndex=1;
+                scale.SelectedIndex=1;
+                fonts.SelectedIndex=0;
+            });
+            VerifyHighDpiRepaint(mode,primary);
             bool setupOpened = false, setupPath = false, setupFonts = false;
             using (var timer = new System.Windows.Forms.Timer {Interval=80}) {
                 timer.Tick += delegate {
@@ -142,9 +321,20 @@ static class GuiQA
             form.GetType().GetField("core",Private).SetValue(form,core);
             form.GetType().GetField("engineRoot",Private).SetValue(form,runtime);
             Call(form,"UpdateControls");
-            Check(ShowsPath(form,runtime),"main panel shows the active runtime's actual absolute path");
+            Settings(dialog=>{
+                SettingsPage(dialog,2);
+                Check(ShowsPath(dialog,runtime),"components settings shows the active runtime's actual path");
+                Check(Field<Button>(form,"openPath").Enabled && Field<Button>(form,"driver").Enabled,
+                    "active components expose their directory and USB driver actions");
+                VerifyToolsDialog(dialog);
+            });
             VerifyUsbDiagnostics(Field<Button>(form,"refresh"));
             Check(Field<ComboBox>(form,"devices").Text=="书桌 iPad","refresh populates USB list");
+            ReviewImage(form,"console");
+            var themeSwitch=Field<CheckBox>(form,"darkMode");
+            themeSwitch.Checked=true;
+            ReviewImage(form,"console-dark");
+            themeSwitch.Checked=false;
             Click(primary);
             Until(()=>StatText().Contains("59.5"),"stream stats");
             Form first=Preview();
@@ -152,11 +342,21 @@ static class GuiQA
             Check(first.TopLevel && first.Visible && first.Owner==null && first.ShowInTaskbar && form.Visible && form.Enabled,"USB playback opens a separate top-level taskbar window and leaves control panel usable");
             Check(surface.FindForm()==first && !form.Contains(surface) && FixtureSupport.Attached==surface.Handle,"native video HWND belongs to the detached window");
             Check(StatText().Contains("1920 × 1080") && Field<Label>(form,"footer").Text.Contains("书桌 iPad") && !OverlayShown(),"detached preview tracks stream status, dims and frames");
+            Settings(dialog=>{
+                SettingsPage(dialog,0);
+                var showToolbar=Field<CheckBox>(form,"showToolbar");
+                Call(showToolbar,"OnClick",EventArgs.Empty);
+                Check(showToolbar.Checked && Named(first,"PreviewToolbar").Visible,
+                    "settings switch displays the toolbar on the current preview");
+                Call(showToolbar,"OnClick",EventArgs.Empty);
+                Check(!showToolbar.Checked,"settings switch restores automatic toolbar hiding");
+            });
             VerifyRotation(first);
             var pin=(ButtonBase)Named(first,"PinPreview");
             Call(pin,"OnClick",EventArgs.Empty);
             Check(first.TopMost && !form.TopMost,"pin applies only to preview window");
-            var audio = Field<CheckBox>(form,"audio"); audio.Checked = false; Idle();
+            var audio = Field<CheckBox>(form,"audio");
+            Settings(dialog=>{ SettingsPage(dialog,0); Call(audio,"OnClick",EventArgs.Empty); Idle(); });
             Check(!FixtureSupport.Audio,"computer audio checkbox applied during session");
             var controlBounds=form.Bounds; var border=form.FormBorderStyle;
             Key(first,Keys.F11);
@@ -183,17 +383,25 @@ static class GuiQA
             VerifyCloseDuringSnapshot(primary);
             VerifyUsbRecovery(primary,mode);
             SelectMode(mode,1); Idle(); FixtureSupport.ShowAirDevice = false;
-            Field<TextBox>(form,"name").Text = "测验接收端";
             var quality=Field<ComboBox>(form,"quality");
             Check(quality.Items.Count>=4 && quality.Items[3].ToString().Contains("720") && quality.Items[3].ToString().Contains("60"),
                 "720p60 is selectable without changing the original three quality options");
-            quality.SelectedIndex = 3;
+            Settings(dialog=>{
+                SettingsPage(dialog,0);
+                Field<TextBox>(form,"name").Text = "测验接收端";
+                quality.SelectedIndex = 3;
+            });
             Click(primary);
             Until(()=>Field<Label>(form,"footer").Text.Contains("等待 iPad"),"wireless waiting");
             Check(Preview()==null && FixtureSupport.ReceiverName=="测验接收端" && FixtureSupport.ReceiverWidth==1280 &&
                 FixtureSupport.ReceiverFps==30 && String.Equals(FixtureSupport.ReceiverHost,assembly.Location,StringComparison.OrdinalIgnoreCase) &&
                 String.Equals(FixtureSupport.ReceiverLibraryDirectory,Path.Combine(runtime,"Wireless"),StringComparison.OrdinalIgnoreCase) &&
                 !FixtureSupport.Allocated,"selecting 720p60 uses the custom host with the stock carrier and waits without an empty projection");
+            Settings(dialog=>{
+                SettingsPage(dialog,0);
+                Check(!quality.Enabled && quality.Text.Contains("720") && !Field<TextBox>(form,"name").Enabled,
+                    "broadcast locks the active name and quality while retaining their displayed values");
+            });
             FixtureSupport.ShowAirDevice = true;
             Until(()=>Field<Label>(form,"footer").Text.Contains("客厅 iPad") && StatText().Contains("59.5"),"wireless attach and display");
             Check(FixtureSupport.Allocated && !OverlayShown() && Surface(Preview()).Handle==FixtureSupport.Attached,"AirPlay auto-opens and renders in detached preview");
@@ -206,12 +414,27 @@ static class GuiQA
             Check(!FixtureSupport.Allocated && !FixtureSupport.AirStarted,"mode change during USB playback releases the old source");
             Click(primary);
             Until(()=>FixtureSupport.Allocated,"second wireless attachment");
+            Settings(dialog=>{
+                SettingsPage(dialog,1);
+                ((ComboBox)Named(dialog,"AppearanceTheme")).SelectedIndex=2;
+                Call(Field<CheckBox>(form,"darkMode"),"OnClick",EventArgs.Empty);
+                var fonts=(ComboBox)Named(dialog,"InterfaceFont");
+                fonts.SelectedIndex=fonts.FindStringExact("Segoe UI");
+                ((ComboBox)Named(dialog,"TextPercent")).SelectedIndex=2;
+                ((ComboBox)Named(dialog,"InterfaceSize")).SelectedIndex=0;
+                SettingsPage(dialog,0);
+                Call(Field<CheckBox>(form,"showToolbar"),"OnClick",EventArgs.Empty);
+            });
             form.Close(); Until(()=>form.IsDisposed,"asynchronous window close");
             Check(!FixtureSupport.Allocated && Preview()==null && FixtureSupport.Calls.Last() == "shutdown","closing main panel during active reception releases both windows and capture");
         }
         using (form=WithPrefs(assembly,prefs)) {
             Check(File.Exists(prefsPath) && CurrentMode(form)==1 && Field<ComboBox>(form,"quality").SelectedIndex==3 &&
                 Field<TextBox>(form,"name").Text=="测验接收端" && !Field<CheckBox>(form,"audio").Checked,"fresh panel restores explicit local preferences across restarts");
+            Check(Field<ComboBox>(form,"appearance").SelectedIndex==2 && Field<CheckBox>(form,"darkMode").Checked &&
+                Field<ComboBox>(form,"interfaceFont").Text=="Segoe UI" && Field<ComboBox>(form,"textPercent").Text=="110%" &&
+                Field<ComboBox>(form,"interfaceSize").Text=="小" && Field<CheckBox>(form,"showToolbar").Checked,
+                "theme, dark mode, font, font size, window size and toolbar survive a restart");
             var view=Call(form,"ViewToken");
             using (Form worker=WithPrefs(assembly,prefs)) {
                 SelectMode(Field<Control>(worker,"mode"),0);

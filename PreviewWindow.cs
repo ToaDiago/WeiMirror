@@ -230,7 +230,7 @@ namespace MirrorDesk
             int other=TextRenderer.MeasureText("截图",Font).Width+icon+3*gap;
             int aspectWidth=TextRenderer.MeasureText(aspect.Text,Font).Width+icon+3*gap;
             int group=pinWidth+2*other+aspectWidth+3*gap, available=Math.Max(1,width-2*outer);
-            bool stacked=available<group+gap+TextRenderer.MeasureText("2732 × 2048   120 fps",stats.Font).Width;
+            bool stacked=available<group+gap+TextRenderer.MeasureText("2732 × 2048   59.9 fps",stats.Font).Width;
             bool doubleRow=available<group;
             int top=stacked ? stats.Font.Height+2*gap : gap;
             int height=top+h+gap+(doubleRow ? h+gap : 0);

@@ -1,7 +1,8 @@
 # Builds the x64 Windows desktop executable, including its complete source archive.
+param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'bin'))
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$outDir = Join-Path $root 'bin'
+$outDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 [IO.Directory]::CreateDirectory($outDir) | Out-Null
 $framework = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319'
 $csharp = Join-Path $PSHOME 'Microsoft.CodeAnalysis.CSharp.dll'

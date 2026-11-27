@@ -136,7 +136,9 @@ static class ReceiverQA
                 Device air = core.GetWirelessDevices().Single();
                 Check(air.Wireless && air.Id == FixtureSupport.AirId && air.Name == "客厅 iPad", "wireless enumeration and source identity");
                 core.Start(air,pane.Handle,true);
-                Check(FixtureSupport.Audio && FixtureSupport.Calls.Contains("air-session") && FixtureSupport.Attached == pane.Handle, "wireless source uses independent session with audio");
+                Check(FixtureSupport.Audio && FixtureSupport.Calls.Contains("air-session") &&
+                    FixtureSupport.Attached==pane.Handle && FixtureSupport.SessionFps==60,
+                    "wireless source uses independent capture with audio and a 60 fps target");
                 core.StopWireless();
                 Check(!core.WirelessReady && !core.HasSession && !FixtureSupport.Allocated, "wireless shutdown releases active wireless session");
                 string oldDirectory=Environment.GetEnvironmentVariable("WEIMIRROR_720_RECEIVER_DIRECTORY");
@@ -146,11 +148,8 @@ static class ReceiverQA
                     Environment.GetEnvironmentVariable("WEIMIRROR_720_RECEIVER_DIRECTORY")==oldDirectory,
                     "720p60 routes only its custom host through the compatible carrier and restores launch environment");
                 core.StopWireless();
-                core.StartWireless("高刷",1920,1080,120);
-                core.Start(air,pane.Handle,true);
-                Check(FixtureSupport.SessionFps==120 && FixtureSupport.ReceiverFps==30,
-                    "1080p120 keeps the core carrier but requests 120 fps from the wireless capture session");
-                core.StopWireless();
+                Expect<ArgumentException>(() => core.StartWireless("高刷",1920,1080,120),
+                    "retired 1080p120 profile is rejected before launch");
                 core.StartWireless("默认高清");
                 Check(FixtureSupport.ReceiverWidth==5120 && FixtureSupport.ReceiverHeight==2880 && FixtureSupport.ReceiverFps==60,
                     "default AirPlay advertises an adaptive high-resolution sink for tall iPhones");

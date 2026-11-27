@@ -14,9 +14,12 @@ namespace MirrorDesk
         static extern uint GetDpiForWindow(IntPtr hwnd);
 
         readonly Form host;
-        readonly List<Action<float>> scaleControls = new List<Action<float>>();
+        readonly List<Action<float,float,string>> scaleControls = new List<Action<float,float,string>>();
         readonly List<Font> scaledFonts = new List<Font>();
+        readonly List<Font> retiredFonts = new List<Font>();
         int applied;
+        float appliedLayoutScale, appliedTextScale;
+        string appliedFont;
 
         public DpiLayout(Form form)
         {
@@ -48,7 +51,10 @@ namespace MirrorDesk
             var minimum=control.MinimumSize;
             var height=control.Height;
             var font=control.Font;
-            bool ownFont=control==host || !ReferenceEquals(font,control.Parent.Font);
+            string family=font.Name;
+            float points=font.SizeInPoints;
+            FontStyle style=font.Style;
+            Font ownedFont=null;
             bool topGrid=control is TableLayoutPanel && control.Dock==DockStyle.Top && !control.AutoSize;
             var table=control as TableLayoutPanel;
             var rows=new List<Action<float>>();
@@ -63,32 +69,49 @@ namespace MirrorDesk
                 }
             }
 
-            scaleControls.Add(scale=>{
+            scaleControls.Add((scale,textScale,fontName)=>{
                 control.Padding=Scale(padding,scale);
                 control.Margin=Scale(margin,scale);
                 if (control!=host) control.MinimumSize=new Size(Pixels(minimum.Width,scale),Pixels(minimum.Height,scale));
                 if (topGrid) control.Height=Pixels(height,scale);
-                if (ownFont) {
-                    var updated=new Font(font.FontFamily,font.SizeInPoints*96f/72f*scale,font.Style,GraphicsUnit.Pixel);
-                    scaledFonts.Add(updated);
+                float size=points*96f/72f*textScale;
+                var updated=ScaledFont(family,fontName,size,style);
+                // WinForms keeps the old Font instance when the values are equal.
+                // A layout-only resize must keep that instance alive.
+                if (updated.Equals(control.Font)) updated.Dispose();
+                else {
                     control.Font=updated;
+                    if (ownedFont!=null) retiredFonts.Add(ownedFont);
+                    ownedFont=updated;
                 }
+                if (ownedFont!=null) scaledFonts.Add(ownedFont);
                 foreach (var row in rows) row(scale);
             });
             foreach (Control child in control.Controls) Capture(child);
         }
 
-        public bool Apply(int dpi)
+        static Font ScaledFont(string baseline,string selected,float size,FontStyle style)
         {
-            if (dpi<=0 || applied==dpi) return false;
+            if (!String.IsNullOrEmpty(selected)) {
+                try { return new Font(selected,size,style,GraphicsUnit.Pixel); }
+                catch (ArgumentException) { }
+            }
+            return new Font(baseline,size,style,GraphicsUnit.Pixel);
+        }
+
+        public bool Apply(int dpi,float layoutScale=1f,float textScale=1f,string fontName=null)
+        {
+            if (dpi<=0 || (applied==dpi && appliedLayoutScale==layoutScale &&
+                appliedTextScale==textScale && appliedFont==fontName)) return false;
             applied=dpi;
-            var old=scaledFonts.ToArray();
+            appliedLayoutScale=layoutScale; appliedTextScale=textScale; appliedFont=fontName;
             scaledFonts.Clear();
             Walk(host,false);
-            try { foreach (var scale in scaleControls) scale(dpi/96f); }
+            try { foreach (var scale in scaleControls) scale(dpi/96f*layoutScale,dpi/96f*textScale,fontName); }
             finally {
                 Walk(host,true);
-                foreach (var font in old) font.Dispose();
+                foreach (var font in retiredFonts) font.Dispose();
+                retiredFonts.Clear();
             }
             return true;
         }
@@ -104,6 +127,8 @@ namespace MirrorDesk
         {
             foreach (var font in scaledFonts) font.Dispose();
             scaledFonts.Clear();
+            foreach (var font in retiredFonts) font.Dispose();
+            retiredFonts.Clear();
         }
     }
 }

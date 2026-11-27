@@ -15,19 +15,26 @@ namespace MirrorDesk
 
     internal sealed class WirelessProfile
     {
-        // The first three positions are persisted by 1.2 and sent to its worker process.
+        // IDs are persisted and sent to worker processes. Keep 4 reserved for the retired profile.
         internal static readonly WirelessProfile[] Choices = {
-            new WirelessProfile(1920,1080,60), new WirelessProfile(1280,720,30),
-            new WirelessProfile(960,540,30), new WirelessProfile(1280,720,60,true),
-            new WirelessProfile(1920,1080,120,true), new WirelessProfile(2560,1440,60,true),
-            new WirelessProfile(5120,2880,60)
+            new WirelessProfile(0,1920,1080,60), new WirelessProfile(1,1280,720,30),
+            new WirelessProfile(2,960,540,30), new WirelessProfile(3,1280,720,60,true),
+            new WirelessProfile(5,2560,1440,60,true), new WirelessProfile(6,5120,2880,60)
         };
-        internal const int DefaultIndex = 6;
-        internal readonly int Width, Height, Fps;
+        internal const int DefaultIndex = 5;
+        internal readonly int Id, Width, Height, Fps;
         internal readonly bool UsesCustomHost;
-        WirelessProfile(int width,int height,int fps,bool customHost=false)
+        WirelessProfile(int id,int width,int height,int fps,bool customHost=false)
         {
-            Width=width; Height=height; Fps=fps; UsesCustomHost=customHost;
+            Id=id; Width=width; Height=height; Fps=fps; UsesCustomHost=customHost;
+        }
+        internal static int IndexFromSavedId(int id)
+        {
+            return Array.FindIndex(Choices,p=>p.Id==(id==4 ? 0 : id));
+        }
+        internal static WirelessProfile FindById(int id)
+        {
+            return Array.Find(Choices,p=>p.Id==id);
         }
         internal static WirelessProfile Find(int width,int height,int fps)
         {
@@ -103,7 +110,7 @@ namespace MirrorDesk
                     try {
                         Environment.SetEnvironmentVariable(AirPlay720Directory, directory);
                         Environment.SetEnvironmentVariable(AirPlayProfileIndex,
-                            Array.IndexOf(WirelessProfile.Choices,profile).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                            profile.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
                         Check(im_wireless_receiver_start_ex(name, typeof(MirrorCore).Assembly.Location,
                             1280,720,30), "启动 " + profile + " AirPlay 接收");
                     } finally {
