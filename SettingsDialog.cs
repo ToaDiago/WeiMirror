@@ -8,13 +8,15 @@ namespace MirrorDesk
 {
     internal sealed class SettingsDialog : Form, IGlassHost
     {
-        const int DefaultWidth=508, DefaultHeight=369;
+        const int DefaultWidth=584, DefaultHeight=348;
+        readonly GlassGrid frame, navigation;
         readonly Button[] sections;
         readonly Control[] pages;
         readonly DpiLayout layout;
         AppPalette palette=new AppPalette(0,false);
         AppPalette IGlassHost.GlassPalette { get { return palette; } }
-        int selection;
+        int selection, settingsDpi=96;
+        bool railLayout=true;
         float interfaceScale=1f, textScale=1f;
         string fontName;
 
@@ -30,18 +32,20 @@ namespace MirrorDesk
             MinimizeBox=MaximizeBox=false;
             ClientSize=new Size(DefaultWidth,DefaultHeight);
 
-            var frame=GlassUi.Grid(1,3);
-            frame.Padding=new Padding(19,15,19,13);
-            Theme.Cols(frame,-1); Theme.Rows(frame,43,-1,39);
-            var navigation=GlassUi.Grid(3,1);
-            navigation.Segmented=true;
-            navigation.Padding=new Padding(4);
-            for (int i=0;i<3;i++) navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,1));
-            Theme.Rows(navigation,-1);
+            frame=GlassUi.Grid(2,3);
+            frame.Padding=new Padding(19,16,19,13);
+            Theme.Cols(frame,132,-1); Theme.Rows(frame,0,-1,39);
+            navigation=GlassUi.Grid(3,3);
+            navigation.Name="SettingsNavigation";
+            navigation.Dock=DockStyle.Top;
+            navigation.Height=135;
+            navigation.Margin=new Padding(0,8,12,0);
+            for (int i=0;i<3;i++) navigation.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,i==0 ? 100 : 0));
+            Theme.Rows(navigation,45,45,45);
             sections=new Button[] {
-                new GlassButton("投屏") { SegmentChoice=true },
-                new GlassButton("外观") { SegmentChoice=true },
-                new GlassButton("组件") { SegmentChoice=true }
+                new GlassButton("投屏") { SegmentChoice=true,Symbol=InterfaceGlyph.Casting },
+                new GlassButton("外观") { SegmentChoice=true,Symbol=InterfaceGlyph.Appearance },
+                new GlassButton("组件") { SegmentChoice=true,Symbol=InterfaceGlyph.Components }
             };
             pages=new[] { casting,appearance,components };
             var body=new ConsoleSurface(1,1) { Padding=new Padding(10,9,10,12), Margin=new Padding(0,7,0,6) };
@@ -53,8 +57,9 @@ namespace MirrorDesk
                 var button=sections[i];
                 button.Name="SettingsSection"+i;
                 button.Font=Theme.Font(10.5f,true);
+                button.TextAlign=ContentAlignment.MiddleLeft;
                 button.Click+=delegate { SelectSection(index); };
-                navigation.Controls.Add(button,i,0);
+                navigation.Controls.Add(button,0,i);
                 deck.Controls.Add(pages[i]);
             }
             var close=new GlassButton("关闭");
@@ -64,9 +69,9 @@ namespace MirrorDesk
             Theme.Cols(actions,-1,91); Theme.Rows(actions,-1);
             actions.Controls.Add(close,1,0);
             CancelButton=close;
-            frame.Controls.Add(navigation,0,0);
-            frame.Controls.Add(body,0,1);
-            frame.Controls.Add(actions,0,2);
+            frame.Controls.Add(navigation,0,1);
+            frame.Controls.Add(body,1,1);
+            frame.Controls.Add(actions,1,2);
             Controls.Add(frame);
             SelectSection(0);
             layout=new DpiLayout(this);
@@ -103,7 +108,55 @@ namespace MirrorDesk
 
         internal void ScaleSettings(int dpi)
         {
+            settingsDpi=dpi;
             layout.Apply(dpi,interfaceScale,textScale,fontName);
+            ArrangeNavigation();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            ArrangeNavigation();
+        }
+
+        int UiPixels(int value) { return DpiLayout.Pixels(value,settingsDpi/96f*interfaceScale); }
+
+        void ArrangeNavigation()
+        {
+            if (layout==null) return;
+            bool rail=ClientSize.Width>=UiPixels(536);
+            frame.SuspendLayout();
+            navigation.SuspendLayout();
+            try {
+                if (rail!=railLayout) {
+                    if (rail) {
+                        frame.SetColumnSpan(navigation,1);
+                        frame.SetCellPosition(navigation,new TableLayoutPanelCellPosition(0,1));
+                    } else {
+                        frame.SetCellPosition(navigation,new TableLayoutPanelCellPosition(0,0));
+                        frame.SetColumnSpan(navigation,2);
+                    }
+                    for (int i=0;i<sections.Length;i++) {
+                        navigation.SetCellPosition(sections[i],new TableLayoutPanelCellPosition(rail ? 0 : i,rail ? i : 0));
+                        sections[i].TextAlign=rail ? ContentAlignment.MiddleLeft : ContentAlignment.MiddleCenter;
+                    }
+                    railLayout=rail;
+                }
+                frame.ColumnStyles[0].Width=rail ? UiPixels(132) : 0;
+                frame.RowStyles[0].Height=rail ? 0 : UiPixels(52);
+                navigation.Segmented=!rail;
+                navigation.Height=UiPixels(rail ? 135 : 52);
+                navigation.Margin=rail ? new Padding(0,UiPixels(8),UiPixels(12),0) : Padding.Empty;
+                navigation.Padding=rail ? Padding.Empty : new Padding(UiPixels(4));
+                for (int i=0;i<sections.Length;i++) {
+                    navigation.ColumnStyles[i].Width=rail ? (i==0 ? 100 : 0) : 1;
+                    navigation.RowStyles[i].Height=rail ? UiPixels(45) : i==0 ? UiPixels(44) : 0;
+                }
+            } finally {
+                navigation.ResumeLayout(true);
+                frame.ResumeLayout(true);
+            }
+            navigation.Invalidate(true);
         }
 
         void Fit(int dpi)

@@ -1,10 +1,13 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace MirrorDesk
 {
+    internal enum InterfaceGlyph { None, Settings, Casting, Appearance, Components }
+
     internal interface IGlassHost
     {
         AppPalette GlassPalette { get; }
@@ -220,16 +223,39 @@ namespace MirrorDesk
             return accent ? Color.White : palette.Ink;
         }
 
-        internal static void Segment(Graphics g,Rectangle box,int radius,AppPalette palette,bool selected,bool hot)
+        internal static void Segment(Graphics g,Control control,Rectangle box,int radius,AppPalette palette,bool selected,bool hot)
         {
             if ((!selected && !hot) || box.Width<4 || box.Height<4) return;
-            GlassUi.Lens(g,box,radius,palette,SystemInformation.HighContrast && selected,selected || hot);
-            if (!selected || SystemInformation.HighContrast) return;
+            if (!selected || SystemInformation.HighContrast) {
+                Lens(g,box,radius,palette,SystemInformation.HighContrast && selected,hot);
+                return;
+            }
             var state=g.Save();
             g.SmoothingMode=SmoothingMode.AntiAlias;
-            using (var shape=Round(box,radius))
-            using (var edge=new Pen(Color.FromArgb(palette.Dark ? 95 : 50,palette.Atmosphere)))
-                g.DrawPath(edge,shape);
+            using (var shape=Round(box,radius)) {
+                var sample=GlassRefraction.Lens(control,box,radius,palette);
+                var clip=g.Save();
+                g.SetClip(shape,CombineMode.Intersect);
+                g.DrawImageUnscaled(sample,box.Location);
+                g.Restore(clip);
+
+                var top=Color.FromArgb((palette.Dark ? 77 : 155)+(hot ? 18 : 0),Color.White);
+                var bottom=Color.FromArgb(palette.Dark ? 28 : 38,Color.White);
+                using (var surface=new LinearGradientBrush(box,top,bottom,74f))
+                using (var rim=new LinearGradientBrush(box,
+                    Color.FromArgb(palette.Dark ? 173 : 250,Color.White),
+                    Color.FromArgb(palette.Dark ? 92 : 152,palette.Atmosphere),102f))
+                using (var edge=new Pen(rim,Math.Max(1,box.Height/36f))) {
+                    g.FillPath(surface,shape);
+                    g.DrawPath(edge,shape);
+                }
+                var specular=Rectangle.Inflate(box,-3,-3);
+                if (specular.Width>3 && specular.Height>3)
+                    using (var reflection=Round(specular,radius-3))
+                    using (var gleam=new LinearGradientBrush(specular,
+                        Color.FromArgb(palette.Dark ? 87 : 227,Color.White),Color.FromArgb(0,Color.White),102f))
+                    using (var inner=new Pen(gleam)) g.DrawPath(inner,reflection);
+            }
             g.Restore(state);
         }
 
@@ -238,6 +264,38 @@ namespace MirrorDesk
             if (SystemInformation.HighContrast) return ActionInk(selected,palette);
             if (!enabled || !selected) return palette.Muted;
             return palette.Dark ? palette.Ink : palette.Action;
+        }
+
+        internal static void Glyph(Graphics g,InterfaceGlyph glyph,Rectangle bounds,Color ink)
+        {
+            var state=g.Save();
+            g.SmoothingMode=SmoothingMode.AntiAlias;
+            g.TranslateTransform(bounds.X,bounds.Y);
+            g.ScaleTransform(bounds.Width/20f,bounds.Height/20f);
+            using (var pen=new Pen(ink,1.5f) { StartCap=LineCap.Round,EndCap=LineCap.Round,LineJoin=LineJoin.Round }) {
+                switch (glyph) {
+                    case InterfaceGlyph.Settings:
+                        g.DrawEllipse(pen,4,4,12,12);
+                        g.DrawEllipse(pen,7.5f,7.5f,5,5);
+                        g.DrawLine(pen,10,2,10,4); g.DrawLine(pen,10,16,10,18);
+                        g.DrawLine(pen,2,10,4,10); g.DrawLine(pen,16,10,18,10);
+                        break;
+                    case InterfaceGlyph.Casting:
+                        g.DrawLines(pen,new[] { new Point(6,14),new Point(2,14),new Point(2,4),new Point(18,4),new Point(18,14),new Point(14,14) });
+                        g.DrawPolygon(pen,new[] {new Point(6,17),new Point(10,11),new Point(14,17)});
+                        break;
+                    case InterfaceGlyph.Appearance:
+                        g.DrawEllipse(pen,3,3,14,14);
+                        g.DrawArc(pen,7,3,10,14,80,200);
+                        break;
+                    case InterfaceGlyph.Components:
+                        g.DrawPolygon(pen,new[] {new Point(2,7),new Point(10,3),new Point(18,7),new Point(10,11)});
+                        g.DrawLines(pen,new[] {new Point(2,11),new Point(10,15),new Point(18,11)});
+                        g.DrawLines(pen,new[] {new Point(2,15),new Point(10,19),new Point(18,15)});
+                        break;
+                }
+            }
+            g.Restore(state);
         }
     }
 
@@ -283,6 +341,8 @@ namespace MirrorDesk
         AppPalette palette=new AppPalette(0,false);
         bool accent, hot, pressed;
         internal bool SegmentChoice { get; set; }
+        internal bool ClearGlass { get; set; }
+        internal InterfaceGlyph Symbol { get; set; }
 
         internal GlassButton(string label,bool prominent=false)
         {
@@ -315,16 +375,32 @@ namespace MirrorDesk
             if (box.Width<3 || box.Height<3) return;
             int radius=Math.Max(10,Font.Height*3/4);
             Color ink;
-            if (SegmentChoice) {
-                GlassUi.Segment(e.Graphics,box,radius,palette,accent,Enabled && hot);
+            if (ClearGlass) {
+                GlassUi.Segment(e.Graphics,this,box,radius,palette,true,Enabled && hot);
+                ink=Enabled ? GlassUi.ActionInk(SystemInformation.HighContrast,palette) : palette.Muted;
+            } else if (SegmentChoice) {
+                GlassUi.Segment(e.Graphics,this,box,radius,palette,accent,Enabled && hot);
                 ink=GlassUi.SegmentInk(palette,accent,Enabled);
             } else {
                 GlassUi.Lens(e.Graphics,box,radius,palette,Enabled && accent,Enabled && hot,pressed);
                 ink=Enabled ? GlassUi.ActionInk(accent,palette) : palette.Muted;
             }
-            TextRenderer.DrawText(e.Graphics,Text,Font,Rectangle.Inflate(box,-5,0),ink,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
-                TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+            bool left=TextAlign==ContentAlignment.MiddleLeft;
+            var textBox=Rectangle.Inflate(box,-Math.Max(5,Font.Height/3),0);
+            int icon=Font.Height;
+            int gap=Math.Max(4,icon/3);
+            if (Symbol!=InterfaceGlyph.None) {
+                int textWidth=TextRenderer.MeasureText(e.Graphics,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
+                if (textBox.Width>=icon+gap+textWidth) {
+                    int x=left ? textBox.Left : Math.Max(textBox.Left,box.X+(box.Width-icon-gap-textWidth)/2);
+                    GlassUi.Glyph(e.Graphics,Symbol,new Rectangle(x,(Height-icon)/2,icon,icon),ink);
+                    textBox=Rectangle.FromLTRB(x+icon+gap,textBox.Top,textBox.Right,textBox.Bottom);
+                    left=true;
+                }
+            }
+            TextRenderer.DrawText(e.Graphics,Text,Font,textBox,ink,
+                (left ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter) | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle.Inflate(box,-4,-4),ink,BackColor);
         }
     }
@@ -332,6 +408,9 @@ namespace MirrorDesk
     internal sealed class GlassToggle : CheckBox
     {
         AppPalette palette=new AppPalette(0,false);
+        readonly Timer transition=new Timer { Interval=15 };
+        readonly Stopwatch clock=new Stopwatch();
+        double thumb, start, target;
 
         internal GlassToggle(string label)
         {
@@ -341,7 +420,24 @@ namespace MirrorDesk
             Dock=DockStyle.Fill;
             Margin=Padding.Empty;
             Cursor=Cursors.Hand;
-            CheckedChanged+=delegate { Invalidate(); };
+            transition.Tick+=delegate {
+                double progress=Math.Min(1,clock.Elapsed.TotalMilliseconds/145);
+                thumb=start+(target-start)*(1-Math.Pow(1-progress,3));
+                if (progress>=1) transition.Stop();
+                Invalidate();
+            };
+            CheckedChanged+=delegate {
+                start=thumb;
+                target=Checked ? 1 : 0;
+                if (IsHandleCreated && Visible && !SystemInformation.HighContrast && SystemInformation.IsMenuAnimationEnabled) {
+                    clock.Restart();
+                    transition.Start();
+                } else {
+                    transition.Stop();
+                    thumb=target;
+                    Invalidate();
+                }
+            };
         }
 
         internal void ApplyPalette(AppPalette value) { palette=value; Invalidate(); }
@@ -356,14 +452,28 @@ namespace MirrorDesk
             GlassUi.Lens(e.Graphics,pill,height/2,palette,Enabled && Checked,false);
             e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
             int dot=height-6;
-            using (var brush=new SolidBrush(SystemInformation.HighContrast ? SystemColors.WindowText :
-                Checked || palette.Dark ? Color.White : palette.Action))
-                e.Graphics.FillEllipse(brush,Checked ? pill.Right-dot-3 : pill.Left+3,pill.Y+3,dot,dot);
+            int x=pill.Left+3+(int)Math.Round((pill.Width-dot-6)*thumb);
+            var knob=new Rectangle(x,pill.Y+3,dot,dot);
+            if (SystemInformation.HighContrast) {
+                using (var solid=new SolidBrush(SystemColors.WindowText)) e.Graphics.FillEllipse(solid,knob);
+            } else {
+                using (var lacquer=new LinearGradientBrush(knob,Color.White,AppPalette.Blend(palette.Field,Color.White,.45),LinearGradientMode.Vertical))
+                using (var edge=new Pen(Color.FromArgb(165,palette.Atmosphere))) {
+                    e.Graphics.FillEllipse(lacquer,knob);
+                    e.Graphics.DrawEllipse(edge,knob);
+                }
+            }
             var label=new Rectangle(0,0,Math.Max(0,pill.Left-9),Height);
             Color ink=Enabled ? GlassUi.ActionInk(false,palette) : palette.Muted;
             TextRenderer.DrawText(e.Graphics,Text,Font,label,ink,TextFormatFlags.VerticalCenter |
                 TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             if (Focused && ShowFocusCues) ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle.Inflate(ClientRectangle,-2,-2));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) transition.Dispose();
+            base.Dispose(disposing);
         }
     }
 }

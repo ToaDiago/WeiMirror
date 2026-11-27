@@ -133,7 +133,7 @@ namespace MirrorDesk
                 GlassUi.ControlBackground(g,this);
                 Color ink=GlassUi.SegmentInk(Palette,Checked,Enabled);
                 if (Width<4 || Height<4) return;
-                GlassUi.Segment(g,Rectangle.Inflate(ClientRectangle,-2,-2),Math.Max(9,Font.Height*3/4),
+                GlassUi.Segment(g,this,Rectangle.Inflate(ClientRectangle,-2,-2),Math.Max(9,Font.Height*3/4),
                     Palette,Checked,hot && Enabled);
                 int icon = Math.Max(18, Font.Height * 4 / 5);
                 int gap = Math.Max(5, icon / 3);
@@ -255,7 +255,7 @@ namespace MirrorDesk
 
         readonly ReceptionBadge sessionBadge = new ReceptionBadge { Dock=DockStyle.Fill, Margin=Padding.Empty };
         readonly Label airReceiver = GlassUi.Label("",11,Theme.Ink);
-        readonly Button settingsButton = new GlassButton("设置");
+        readonly Button settingsButton = new GlassButton("设置") { Symbol=InterfaceGlyph.Settings,ClearGlass=true };
         readonly BrandMark logo = new BrandMark();
         TableLayoutPanel dashboard, connectionActions;
         Panel viewport;

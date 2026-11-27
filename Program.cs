@@ -8,8 +8,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("微映 · WeiMirror")]
 [assembly: AssemblyProduct("WeiMirror")]
 [assembly: AssemblyDescription("iPad 和 iPhone 的 USB / AirPlay 投屏接收端")]
-[assembly: AssemblyVersion("1.4.4.0")]
-[assembly: AssemblyFileVersion("1.4.4.0")]
+[assembly: AssemblyVersion("1.4.5.0")]
+[assembly: AssemblyFileVersion("1.4.5.0")]
 
 namespace MirrorDesk
 {
@@ -112,7 +112,7 @@ namespace MirrorDesk
         public static void Export(IWin32Window owner, bool benchmark)
         {
             using (var picker = new SaveFileDialog {
-                FileName = benchmark ? "WeiMirror-Latency.html" : "WeiMirror-1.4.4-source.zip",
+                FileName = benchmark ? "WeiMirror-Latency.html" : "WeiMirror-1.4.5-source.zip",
                 Filter = benchmark ? "离线测试页 (*.html)|*.html" : "源代码归档 (*.zip)|*.zip", AddExtension = true })
             {
                 if (picker.ShowDialog(owner) != DialogResult.OK) return;
