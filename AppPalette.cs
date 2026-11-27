@@ -9,8 +9,16 @@ namespace MirrorDesk
     {
         AppPalette palette=new AppPalette(0,false);
         string emptyText="";
+        bool nativeDarkRequested;
 
-        public PalettePicker() { DrawMode=DrawMode.OwnerDrawFixed; }
+        public PalettePicker()
+        {
+            DrawMode=DrawMode.OwnerDrawFixed;
+            FlatStyle=FlatStyle.Standard;
+        }
+
+        [DllImport("uxtheme.dll",CharSet=CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hwnd,string subAppName,string subIdList);
 
         internal string EmptyText
         {
@@ -26,7 +34,30 @@ namespace MirrorDesk
         {
             palette=value;
             BackColor=value.Field; ForeColor=value.Ink;
+            ApplyNativeTheme();
             Invalidate();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            nativeDarkRequested=false;
+            ApplyNativeTheme();
+        }
+
+        protected override void OnSystemColorsChanged(EventArgs e)
+        {
+            base.OnSystemColorsChanged(e);
+            ApplyNativeTheme();
+        }
+
+        void ApplyNativeTheme()
+        {
+            if (!IsHandleCreated) return;
+            bool dark=palette.Dark && !SystemInformation.HighContrast;
+            if (dark==nativeDarkRequested) return;
+            nativeDarkRequested=dark;
+            SetWindowTheme(Handle,dark ? "DarkMode_CFD" : null,null);
         }
 
         protected override void OnFontChanged(EventArgs e)

@@ -262,15 +262,17 @@ namespace MirrorDesk
                 g.SmoothingMode=SmoothingMode.AntiAlias;
                 g.TranslateTransform((ClientSize.Width-side)/2,(ClientSize.Height-side)/2);
                 g.ScaleTransform(side/40f,side/40f);
-                GlassUi.Lens(g,new Rectangle(1,1,38,38),13,Palette,true,false);
-                using (var bg=new SolidBrush(Palette.Action))
-                using (var monitor=new Pen(Color.FromArgb(241,248,255),1.55f)) {
+                var ink=SystemInformation.HighContrast ? SystemColors.WindowText : Palette.Dark ? Palette.Accent : Palette.Action;
+                var tile=SystemInformation.HighContrast ? SystemColors.Window : AppPalette.Blend(Palette.Canvas,ink,.13);
+                using (var fill=new SolidBrush(tile))
+                using (var monitor=new Pen(ink,1.55f)) {
+                    using (var shape=GlassUi.Round(new Rectangle(2,2,36,36),10)) g.FillPath(fill,shape);
                     monitor.LineJoin=LineJoin.Round;
                     using (var desktop=GlassUi.Round(new Rectangle(8,9,22,15),3)) g.DrawPath(monitor,desktop);
                     g.DrawLine(monitor,16,24,16,29);
                     g.DrawLine(monitor,12,29,20,29);
                     using (var phone=GlassUi.Round(new Rectangle(22,16,10,15),3)) {
-                        g.FillPath(bg,phone);
+                        g.FillPath(fill,phone);
                         g.DrawPath(monitor,phone);
                     }
                 }
@@ -284,19 +286,13 @@ namespace MirrorDesk
             protected override void OnPaint(PaintEventArgs e)
             {
                 int size=Math.Max(5,Font.Height/3);
-                int textWidth=TextRenderer.MeasureText(e.Graphics,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
-                int inset=Math.Max(5,Font.Height/3);
-                int x=Math.Max(inset,Width-textWidth-size-3*inset);
-                int height=Math.Min(Height-2,Font.Height+inset);
+                int textStart=size+Math.Max(6,Font.Height/3);
                 e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
-                var box=new Rectangle(x-inset,(Height-height)/2,Width-x+inset-2,height);
-                if (box.Width>3 && box.Height>3 && !SystemInformation.HighContrast)
-                    using (var pill=GlassUi.Round(box,height/2))
-                    using (var tint=new SolidBrush(Color.FromArgb(34,Signal))) e.Graphics.FillPath(tint,pill);
-                using (var color=new SolidBrush(Signal)) e.Graphics.FillEllipse(color,x,(Height-size)/2,size,size);
-                TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(x+size+6,0,
-                    Math.Max(0,Width-x-size-6),Height),ForeColor,
-                    TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+                using (var color=new SolidBrush(Signal)) e.Graphics.FillEllipse(color,0,(Height-size)/2,size,size);
+                TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(textStart,0,
+                    Math.Max(0,Width-textStart),Height),ForeColor,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding |
+                    TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             }
         }
 
@@ -351,7 +347,7 @@ namespace MirrorDesk
         void ArrangeConnectionActions()
         {
             if (consoleDpi==null) return;
-            bool stacked=ClientSize.Width<UiPixels(463);
+            bool stacked=ClientSize.Width<UiPixels(474);
             if (connectionActions.GetRow(primary)!=(stacked ? 1 : 0)) {
                 connectionActions.SuspendLayout();
                 if (stacked) {
@@ -363,9 +359,8 @@ namespace MirrorDesk
                 }
                 connectionActions.ResumeLayout();
             }
-            connectionActions.RowStyles[1].Height=stacked ? UiPixels(50) : 0;
-            dashboard.RowStyles[0].Height=UiPixels(stacked ? 266 : 219);
-            dashboard.Height=UiPixels(stacked ? 384 : 337);
+            connectionActions.RowStyles[1].Height=stacked ? UiPixels(49) : 0;
+            dashboard.Height=UiPixels(stacked ? 369 : 332);
             viewport.AutoScrollMinSize=new Size(0,dashboard.Height);
         }
 
@@ -374,7 +369,8 @@ namespace MirrorDesk
             string state = closing ? "正在退出" : WaitingForUsb ? "等待重连" : playing ? (hadVideo ? "投屏中" : "等待画面") : listening ? "等待设备" :
                 core == null ? "待配置" : "就绪";
             sessionBadge.Text=state;
-            var signal=playing || listening ? palette.Accent : palette.Action;
+            var signal=SystemInformation.HighContrast ? SystemColors.WindowText :
+                playing || listening ? palette.Accent : palette.Muted;
             if (sessionBadge.Signal!=signal) {
                 sessionBadge.Signal=signal;
                 sessionBadge.Invalidate();
@@ -413,13 +409,13 @@ namespace MirrorDesk
 
             var page=GlassUi.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,67,-1);
             var header=GlassUi.Grid(4,1); Theme.Cols(header,48,86,-1,105); Theme.Rows(header,-1);
-            header.Padding=new Padding(27,0,27,0);
+            header.Padding=new Padding(22,0,23,0);
             logo.Dock=DockStyle.Fill; logo.Margin=new Padding(0,12,9,12); logo.TabStop=false;
             header.Controls.Add(logo,0,0);
             var brandTitle=GlassUi.Label("微映",17,Theme.Ink,true);
             brandTitle.Name="BrandTitle";
             header.Controls.Add(brandTitle,1,0);
-            consoleSubtitle=GlassUi.Label("iPhone / iPad",10,Theme.Muted);
+            consoleSubtitle=GlassUi.Label("",10,Theme.Muted);
             consoleSubtitle.Name="Muted";
             header.Controls.Add(consoleSubtitle,2,0);
             settingsButton.Name="OpenSettings";
@@ -431,11 +427,15 @@ namespace MirrorDesk
             header.Controls.Add(settingsButton,3,0); page.Controls.Add(header,0,0);
 
             viewport=new GlassPanel { Dock=DockStyle.Fill, Margin=Padding.Empty, AutoScroll=true, Name="Canvas" };
-            dashboard=GlassUi.Grid(1,3); dashboard.Dock=DockStyle.Top; dashboard.Height=337;
+            dashboard=GlassUi.Grid(1,1); dashboard.Dock=DockStyle.Top; dashboard.Height=332;
             dashboard.Padding=new Padding(21,3,21,11);
-            Theme.Cols(dashboard,-1); Theme.Rows(dashboard,219,11,93);
-            dashboard.Controls.Add(BuildConnectionCard(),0,0);
-            dashboard.Controls.Add(BuildSessionCard(),0,2);
+            Theme.Cols(dashboard,-1); Theme.Rows(dashboard,-1);
+            var workspace=new ConsoleSurface(1,3) { Padding=new Padding(22,16,22,14) };
+            Theme.Cols(workspace,-1); Theme.Rows(workspace,-1,15,69);
+            workspace.Controls.Add(BuildConnectionSection(),0,0);
+            workspace.Controls.Add(new GlassRule(),0,1);
+            workspace.Controls.Add(BuildSessionRow(),0,2);
+            dashboard.Controls.Add(workspace,0,0);
             viewport.Controls.Add(dashboard);
             BuildSettings();
             setupPage=new SetupPage();
@@ -468,7 +468,7 @@ namespace MirrorDesk
                 setupPage.Visible=page==setupPage;
                 page.BringToFront();
             } finally { content.ResumeLayout(true); }
-            consoleSubtitle.Text=receiver ? "iPhone / iPad" : page==settingsPage ? "设置" : "组件准备";
+            consoleSubtitle.Text=receiver ? "" : page==settingsPage ? "设置" : "组件准备";
             settingsButton.Text=receiver ? "设置" : "返回投屏";
             settingsButton.Symbol=receiver ? InterfaceGlyph.Settings : InterfaceGlyph.None;
             detail.SetToolTip(settingsButton,receiver ? "打开设置（Ctrl+,）" : "返回投屏控制台（Esc）");
@@ -486,10 +486,10 @@ namespace MirrorDesk
             return DpiLayout.Pixels(value,consoleDpiValue/96f*InterfaceScale);
         }
 
-        ConsoleSurface BuildConnectionCard()
+        Control BuildConnectionSection()
         {
-            var card=new ConsoleSurface(1,6) { Padding=new Padding(20,13,20,17) };
-            Theme.Cols(card,-1); Theme.Rows(card,29,45,9,39,9,-1);
+            var card=GlassUi.Grid(1,6);
+            Theme.Cols(card,-1); Theme.Rows(card,33,45,9,39,7,-1);
             var title=GlassUi.Label("连接设备",13,Theme.Ink,true);
             card.Controls.Add(title,0,0);
             card.Controls.Add(mode,0,1);
@@ -540,21 +540,21 @@ namespace MirrorDesk
             } finally { input.ResumeLayout(true); }
         }
 
-        ConsoleSurface BuildSessionCard()
+        Control BuildSessionRow()
         {
-            var card=new ConsoleSurface(2,2) { Padding=new Padding(20,9,20,14) };
+            var card=GlassUi.Grid(2,2);
             Theme.Cols(card,-1,152); Theme.Rows(card,28,-1);
-            var title=GlassUi.Label("接收状态",11.5f,Theme.Ink,true);
-            card.Controls.Add(title,0,0);
             sessionBadge.Font=Theme.Font(10.5f,true);
-            card.Controls.Add(sessionBadge,1,0);
+            sessionBadge.AccessibleName="接收状态";
+            card.Controls.Add(sessionBadge,0,0);
             footer.Font=Theme.Font(10.5f);
             footer.Name="Muted"; footer.UseMnemonic=false;
             footer.Margin=new Padding(0,0,9,0);
             card.Controls.Add(footer,0,1);
             showPreview.Font=Theme.Font(10);
-            showPreview.Margin=new Padding(0,3,0,2);
-            card.Controls.Add(showPreview,1,1);
+            showPreview.Margin=new Padding(0,15,0,14);
+            card.Controls.Add(showPreview,1,0);
+            card.SetRowSpan(showPreview,2);
             return card;
         }
     }

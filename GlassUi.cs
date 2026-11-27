@@ -74,9 +74,9 @@ namespace MirrorDesk
             var state=g.Save();
             g.SmoothingMode=SmoothingMode.AntiAlias;
             bool highContrast=SystemInformation.HighContrast;
-            var top=highContrast ? SystemColors.Window : Color.FromArgb(palette.Dark ? 109 : 38,palette.Action);
-            var bottom=highContrast ? top : Color.FromArgb(palette.Dark ? 57 : 15,palette.Action);
-            var rim=highContrast ? SystemColors.WindowText : Color.FromArgb(palette.Dark ? 81 : 162,Color.White);
+            var top=highContrast ? SystemColors.Window : Color.FromArgb(palette.Dark ? 104 : 27,palette.Dark ? Color.Black : palette.Action);
+            var bottom=highContrast ? top : Color.FromArgb(palette.Dark ? 46 : 15,palette.Dark ? Color.Black : palette.Action);
+            var rim=highContrast ? SystemColors.WindowText : Color.FromArgb(palette.Dark ? 26 : 36,palette.Ink);
             using (var shape=Round(box,Math.Max(10,track.Font.Height)))
             using (var fill=new LinearGradientBrush(box,top,bottom,90f))
             using (var outline=new Pen(rim)) {
@@ -99,9 +99,8 @@ namespace MirrorDesk
             return path;
         }
 
-        // Use one coordinate space for the window and each pane. The offset inside
-        // a pane makes the bands bend at its edge instead of repeating per control.
-        internal static void Backdrop(Graphics g,Control surface,AppPalette palette,int refraction=0)
+        // Sample the same window coordinates in every opaque child control.
+        internal static void Backdrop(Graphics g,Control surface,AppPalette palette)
         {
             Form window=surface.FindForm();
             var bounds=window?.ClientRectangle ?? surface.ClientRectangle;
@@ -111,31 +110,19 @@ namespace MirrorDesk
                 origin.Offset(c.Left,c.Top);
             var state=g.Save();
             g.SetClip(surface.ClientRectangle,CombineMode.Intersect);
-            g.TranslateTransform(-origin.X+refraction,-origin.Y-refraction/2);
+            g.TranslateTransform(-origin.X,-origin.Y);
             var fill=Rectangle.Inflate(bounds,32,32);
             if (SystemInformation.HighContrast) {
                 using (var solid=new SolidBrush(SystemColors.Window)) g.FillRectangle(solid,fill);
                 g.Restore(state);
                 return;
             }
-            Color light=palette.Dark ? AppPalette.Blend(palette.Canvas,palette.Atmosphere,.11) :
-                AppPalette.Blend(palette.Canvas,Color.White,.76);
-            Color deep=AppPalette.Blend(palette.Canvas,palette.Atmosphere,palette.Dark ? .34 : .38);
-            using (var wash=new LinearGradientBrush(fill,light,deep,51f)) g.FillRectangle(wash,fill);
+            Color light=AppPalette.Blend(palette.Canvas,Color.White,palette.Dark ? .025 : .63);
+            Color deep=AppPalette.Blend(palette.Canvas,palette.Atmosphere,palette.Dark ? .073 : .15);
+            using (var wash=new LinearGradientBrush(fill,light,deep,105f)) g.FillRectangle(wash,fill);
             float w=bounds.Width, h=bounds.Height;
-            Light(g,new RectangleF(w*.54f,-h*.25f,w*.90f,h*1.32f),palette.Atmosphere,palette.Dark ? 112 : 156);
-            Light(g,new RectangleF(-w*.34f,h*.49f,w*1.32f,h*.86f),palette.Caustic,palette.Dark ? 94 : 128);
-            Light(g,new RectangleF(w*.27f,h*.48f,w*1.06f,h*.95f),Color.White,palette.Dark ? 17 : 107);
-            using (var arc=new GraphicsPath())
-            {
-                arc.AddBezier(-w*.08f,h*1.04f,w*.40f,h*.91f,w*.79f,h*.89f,w*1.14f,-h*.11f);
-                g.SmoothingMode=SmoothingMode.AntiAlias;
-                using (var glow=new Pen(Color.FromArgb(palette.Dark ? 11 : 33,Color.White),Math.Max(9,h*.060f)))
-                using (var edge=new Pen(Color.FromArgb(palette.Dark ? 27 : 66,Color.White),Math.Max(1,h*.004f))) {
-                    g.DrawPath(glow,arc);
-                    g.DrawPath(edge,arc);
-                }
-            }
+            Light(g,new RectangleF(w*.44f,-h*.47f,w*1.02f,h*1.42f),palette.Atmosphere,palette.Dark ? 57 : 97);
+            Light(g,new RectangleF(-w*.49f,h*.28f,w*1.43f,h*1.23f),palette.Caustic,palette.Dark ? 27 : 66);
             g.Restore(state);
         }
 
@@ -154,36 +141,25 @@ namespace MirrorDesk
         internal static void Pane(Graphics g,Control surface,AppPalette palette)
         {
             Backdrop(g,surface,palette);
-            var box=new Rectangle(3,2,surface.Width-7,surface.Height-8);
+            var box=new Rectangle(1,1,surface.Width-3,surface.Height-4);
             if (box.Width<4 || box.Height<4 || SystemInformation.HighContrast) return;
-            int radius=Math.Max(14,surface.Font.Height+5);
+            int radius=Math.Max(11,surface.Font.Height*4/5);
             var state=g.Save();
             g.SmoothingMode=SmoothingMode.AntiAlias;
             var shade=box;
-            shade.Offset(0,3);
+            shade.Offset(0,2);
             using (var shadow=Round(shade,radius))
-            using (var fill=new SolidBrush(Color.FromArgb(palette.Dark ? 55 : 20,Color.FromArgb(26,53,99))))
+            using (var fill=new SolidBrush(Color.FromArgb(palette.Dark ? 44 : 19,Color.FromArgb(24,37,64))))
                 g.FillPath(fill,shadow);
             using (var shape=Round(box,radius)) {
-                var clip=g.Save();
-                g.SetClip(shape,CombineMode.Intersect);
-                Backdrop(g,surface,palette,Math.Max(4,surface.Font.Height/3));
-                g.Restore(clip);
-                Color top=Color.FromArgb(palette.Dark ? 155 : 183,palette.Dark ? palette.Surface : Color.White);
-                Color bottom=Color.FromArgb(palette.Dark ? 98 : 91,palette.Dark ? palette.Surface : Color.White);
-                using (var coat=new LinearGradientBrush(box,top,bottom,72f))
-                using (var rim=new LinearGradientBrush(box,Color.FromArgb(palette.Dark ? 132 : 244,Color.White),
-                    Color.FromArgb(palette.Dark ? 39 : 124,Color.White),104f))
-                using (var boundary=new Pen(rim,1.4f)) {
+                Color top=Color.FromArgb(palette.Dark ? 88 : 175,palette.Dark ? palette.Surface : Color.White);
+                Color bottom=Color.FromArgb(palette.Dark ? 194 : 116,palette.Dark ? palette.Surface : Color.White);
+                using (var coat=new LinearGradientBrush(box,top,bottom,96f))
+                using (var rim=new LinearGradientBrush(box,Color.FromArgb(palette.Dark ? 45 : 206,Color.White),
+                    Color.FromArgb(palette.Dark ? 24 : 33,palette.Ink),90f))
+                using (var boundary=new Pen(rim)) {
                     g.FillPath(coat,shape);
                     g.DrawPath(boundary,shape);
-                }
-                box.Inflate(-2,-2);
-                if (box.Width>2 && box.Height>2) {
-                    using (var highlight=Round(box,radius-2))
-                    using (var rim=new LinearGradientBrush(box,Color.FromArgb(palette.Dark ? 51 : 176,Color.White),
-                        Color.FromArgb(0,Color.White),96f))
-                    using (var pen=new Pen(rim)) g.DrawPath(pen,highlight);
                 }
             }
             g.Restore(state);
@@ -201,17 +177,16 @@ namespace MirrorDesk
                     lip=SystemColors.WindowText;
                 } else if (accent) {
                     var action=palette.Action;
-                    top=AppPalette.Blend(action,palette.Atmosphere,pressed ? .06 : hot ? .32 : .22);
-                    bottom=AppPalette.Blend(action,Color.FromArgb(15,24,59),.24);
-                    lip=Color.FromArgb(196,AppPalette.Blend(palette.Atmosphere,Color.White,.62));
+                    top=AppPalette.Blend(action,palette.Atmosphere,pressed ? 0 : hot ? .19 : .10);
+                    bottom=AppPalette.Blend(action,Color.FromArgb(15,24,59),.14);
+                    lip=Color.FromArgb(107,AppPalette.Blend(palette.Atmosphere,Color.White,.56));
                 } else {
-                    top=Color.FromArgb(pressed ? 181 : hot ? 222 : 153,palette.Dark ? palette.Selection : Color.White);
-                    bottom=Color.FromArgb(pressed ? 107 : hot ? 129 : 64,palette.Dark ? palette.Canvas : Color.White);
-                    lip=Color.FromArgb(palette.Dark ? 94 : 224,Color.White);
+                    top=Color.FromArgb(pressed ? 13 : hot ? 25 : 11,palette.Ink);
+                    bottom=Color.FromArgb(pressed ? 21 : hot ? 18 : 7,palette.Ink);
+                    lip=Color.FromArgb(palette.Dark ? 30 : 36,palette.Ink);
                 }
                 using (var fill=new LinearGradientBrush(box,top,bottom,88f))
-                using (var edge=new LinearGradientBrush(box,lip,Color.FromArgb(palette.Dark ? 67 : 116,palette.Atmosphere),100f))
-                using (var pen=new Pen(edge,1.15f)) {
+                using (var pen=new Pen(lip)) {
                     g.FillPath(fill,shape);
                     g.DrawPath(pen,shape);
                 }
@@ -241,22 +216,16 @@ namespace MirrorDesk
                 g.DrawImageUnscaled(sample,box.Location);
                 g.Restore(clip);
 
-                var top=Color.FromArgb((palette.Dark ? 77 : 155)+(pressed ? -12 : hot ? 18 : 0),Color.White);
-                var bottom=Color.FromArgb((palette.Dark ? 28 : 38)+(pressed ? 12 : 0),Color.White);
-                using (var surface=new LinearGradientBrush(box,top,bottom,74f))
+                var top=Color.FromArgb((palette.Dark ? 64 : 201)+(pressed ? -14 : hot ? 18 : 0),Color.White);
+                var bottom=Color.FromArgb((palette.Dark ? 19 : 81)+(pressed ? 9 : 0),Color.White);
+                using (var surface=new LinearGradientBrush(box,top,bottom,109f))
                 using (var rim=new LinearGradientBrush(box,
-                    Color.FromArgb(palette.Dark ? 173 : 250,Color.White),
-                    Color.FromArgb(palette.Dark ? 92 : 152,palette.Atmosphere),102f))
-                using (var edge=new Pen(rim,Math.Max(1,box.Height/36f))) {
+                    Color.FromArgb(palette.Dark ? 127 : 237,Color.White),
+                    Color.FromArgb(palette.Dark ? 76 : 121,palette.Atmosphere),113f))
+                using (var edge=new Pen(rim,Math.Max(1,box.Height/49f))) {
                     g.FillPath(surface,shape);
                     g.DrawPath(edge,shape);
                 }
-                var specular=Rectangle.Inflate(box,-3,-3);
-                if (specular.Width>3 && specular.Height>3)
-                    using (var reflection=Round(specular,radius-3))
-                    using (var gleam=new LinearGradientBrush(specular,
-                        Color.FromArgb(palette.Dark ? 87 : 227,Color.White),Color.FromArgb(0,Color.White),102f))
-                    using (var inner=new Pen(gleam)) g.DrawPath(inner,reflection);
             }
             g.Restore(state);
         }
@@ -266,6 +235,26 @@ namespace MirrorDesk
             if (SystemInformation.HighContrast) return ActionInk(selected,palette);
             if (!enabled || !selected) return palette.Muted;
             return palette.Dark ? palette.Ink : palette.Action;
+        }
+
+        internal static void NavigationItem(Graphics g,Rectangle box,AppPalette palette,bool selected,bool hot,int radius)
+        {
+            if (!selected && !hot) return;
+            if (SystemInformation.HighContrast) {
+                Lens(g,box,radius,palette,selected,hot);
+                return;
+            }
+            var state=g.Save();
+            g.SmoothingMode=SmoothingMode.AntiAlias;
+            using (var shape=Round(box,radius))
+            using (var fill=new SolidBrush(Color.FromArgb(selected ? 27 : 13,palette.Ink)))
+                g.FillPath(fill,shape);
+            if (selected) {
+                var line=new Rectangle(box.Left+2,box.Top+box.Height/4,Math.Max(2,box.Height/17),box.Height/2);
+                using (var marker=Round(line,line.Width))
+                using (var brush=new SolidBrush(palette.Accent)) g.FillPath(brush,marker);
+            }
+            g.Restore(state);
         }
 
         internal static void Glyph(Graphics g,InterfaceGlyph glyph,Rectangle bounds,Color ink)
@@ -337,6 +326,27 @@ namespace MirrorDesk
         protected override void OnPaintBackground(PaintEventArgs e) { GlassUi.ControlBackground(e.Graphics,this); }
     }
 
+    internal sealed class GlassRule : Control
+    {
+        internal GlassRule()
+        {
+            Dock=DockStyle.Fill;
+            Margin=Padding.Empty;
+            TabStop=false;
+            DoubleBuffered=true;
+        }
+
+        protected override void OnPaintBackground(PaintEventArgs e) { GlassUi.ControlBackground(e.Graphics,this); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var palette=(FindForm() as IGlassHost)?.GlassPalette;
+            var color=SystemInformation.HighContrast || palette==null
+                ? SystemColors.WindowText : Color.FromArgb(palette.Dark ? 34 : 31,palette.Ink);
+            using (var pen=new Pen(color)) e.Graphics.DrawLine(pen,0,Height/2,Width,Height/2);
+        }
+    }
+
     internal class GlassLabel : Label
     {
         public GlassLabel() { DoubleBuffered=true; SetStyle(ControlStyles.ResizeRedraw,true); }
@@ -380,20 +390,21 @@ namespace MirrorDesk
             GlassUi.ControlBackground(e.Graphics,this);
             var box=Rectangle.Inflate(ClientRectangle,-2,-2);
             if (box.Width<3 || box.Height<3) return;
-            int radius=Math.Max(10,Font.Height*3/4);
+            int radius=Math.Max(6,Font.Height/2);
+            bool left=TextAlign==ContentAlignment.MiddleLeft;
             Color ink;
             if (ClearGlass) {
-                GlassUi.Segment(e.Graphics,this,box,radius,palette,true,Enabled && hot);
+                GlassUi.Segment(e.Graphics,this,box,Math.Max(10,Font.Height*3/4),palette,true,Enabled && hot,pressed);
                 ink=Enabled ? GlassUi.ActionInk(SystemInformation.HighContrast,palette) : palette.Muted;
             } else if (SegmentChoice) {
-                GlassUi.Segment(e.Graphics,this,box,radius,palette,accent,Enabled && hot);
+                if (left) GlassUi.NavigationItem(e.Graphics,box,palette,accent,Enabled && hot,radius);
+                else GlassUi.Segment(e.Graphics,this,box,Math.Max(9,Font.Height*3/4),palette,accent,Enabled && hot,pressed);
                 ink=GlassUi.SegmentInk(palette,accent,Enabled);
             } else {
                 GlassUi.Lens(e.Graphics,box,radius,palette,Enabled && accent,Enabled && hot,pressed);
                 ink=Enabled ? GlassUi.ActionInk(accent,palette) : palette.Muted;
             }
-            bool left=TextAlign==ContentAlignment.MiddleLeft;
-            var textBox=Rectangle.Inflate(box,-Math.Max(5,Font.Height/3),0);
+            var textBox=Rectangle.Inflate(box,-Math.Max(5,left && SegmentChoice ? Font.Height/2 : Font.Height/3),0);
             int icon=Font.Height;
             int gap=Math.Max(4,icon/3);
             if (Symbol!=InterfaceGlyph.None) {

@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Drawing;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +17,7 @@ namespace MirrorDesk
         readonly ProgressBar bar=new ProgressBar { Dock=DockStyle.Fill, Margin=Padding.Empty,
             Style=ProgressBarStyle.Continuous, Visible=false, AccessibleName="组件准备总进度" };
         readonly Label status=GlassUi.Label("等待选择组件来源",10.5f,Theme.Muted);
-        readonly Label directoryLabel=GlassUi.Label("组件保存位置",11,Theme.Ink,true);
+        readonly Label directoryLabel=GlassUi.Label("组件保存位置",10.5f,Theme.Ink,true);
         readonly System.Windows.Forms.Timer copyFeedback=new System.Windows.Forms.Timer { Interval=1800 };
         readonly TextBox directory=new TextBox {
             Dock=DockStyle.Fill, Multiline=true, ReadOnly=true, WordWrap=true,
@@ -42,30 +41,31 @@ namespace MirrorDesk
             DoubleBuffered=true;
             SetStyle(ControlStyles.ResizeRedraw,true);
             var scroll=new GlassPanel { Dock=DockStyle.Fill, AutoScroll=true };
-            var grid=GlassUi.Grid(1,4);
-            grid.Dock=DockStyle.Top; grid.AutoSize=true; grid.AutoSizeMode=AutoSizeMode.GrowAndShrink;
-            grid.Padding=new Padding(21,3,21,11);
-            Theme.Cols(grid,-1); Theme.Rows(grid,42,110,110,0);
-            grid.RowStyles[3].SizeType=SizeType.AutoSize;
-            var title=GlassUi.Label("准备投屏组件",15,Theme.Ink,true);
-            title.Margin=new Padding(8,0,0,5);
-            grid.Controls.Add(title,0,0);
+            var layout=GlassUi.Grid(1,1);
+            layout.Dock=DockStyle.Top; layout.AutoSize=true; layout.AutoSizeMode=AutoSizeMode.GrowAndShrink;
+            layout.Padding=new Padding(21,3,21,11);
+            Theme.Cols(layout,-1);
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            var sources=new ConsoleSurface(1,2) { Padding=new Padding(13,9,13,12), Margin=new Padding(0,0,0,8) };
-            Theme.Cols(sources,-1); Theme.Rows(sources,42,-1);
-            download.Margin=new Padding(0,0,0,4);
-            sources.Controls.Add(download,0,0);
+            var workspace=new ConsoleSurface(1,7) {
+                Padding=new Padding(20,14,20,15), AutoSize=true, AutoSizeMode=AutoSizeMode.GrowAndShrink
+            };
+            Theme.Cols(workspace,-1); Theme.Rows(workspace,39,46,38,18,98,8,0);
+            workspace.RowStyles[6].SizeType=SizeType.AutoSize;
+            workspace.Controls.Add(GlassUi.Label("准备投屏组件",14,Theme.Ink,true),0,0);
+            download.Margin=new Padding(0,0,0,7);
+            workspace.Controls.Add(download,0,1);
             var offline=GlassUi.Grid(2,1);
             offline.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
             offline.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
             Theme.Rows(offline,-1);
             zip.Margin=new Padding(0,0,4,0); folder.Margin=new Padding(4,0,0,0);
             offline.Controls.Add(zip,0,0); offline.Controls.Add(folder,1,0);
-            sources.Controls.Add(offline,0,1);
-            grid.Controls.Add(sources,0,1);
+            workspace.Controls.Add(offline,0,2);
+            workspace.Controls.Add(new GlassSectionRule(),0,3);
 
-            var paths=new ConsoleSurface(2,2) { Padding=new Padding(13,6,13,11), Margin=new Padding(0,0,0,8) };
-            Theme.Cols(paths,-1,91); Theme.Rows(paths,34,-1);
+            var paths=GlassUi.Grid(2,2);
+            Theme.Cols(paths,-1,91); Theme.Rows(paths,37,-1);
             paths.Controls.Add(directoryLabel,0,0);
             copy.Font=Theme.Font(10.5f);
             copy.Margin=new Padding(4,0,0,2);
@@ -75,10 +75,10 @@ namespace MirrorDesk
             directory.Margin=new Padding(0,3,0,0);
             paths.Controls.Add(directory,0,1);
             paths.SetColumnSpan(directory,2);
-            grid.Controls.Add(paths,0,2);
+            workspace.Controls.Add(paths,0,4);
 
-            var progress=new ConsoleSurface(2,2) { Padding=new Padding(13,6,13,10), Margin=Padding.Empty,
-                AutoSize=true, AutoSizeMode=AutoSizeMode.GrowAndShrink };
+            var progress=GlassUi.Grid(2,2);
+            progress.AutoSize=true; progress.AutoSizeMode=AutoSizeMode.GrowAndShrink;
             Theme.Cols(progress,-1,91); Theme.Rows(progress,0,7);
             progress.RowStyles[0].SizeType=SizeType.AutoSize;
             status.AutoSize=true; status.AutoEllipsis=false; status.MinimumSize=new Size(0,35);
@@ -89,8 +89,9 @@ namespace MirrorDesk
             cancel.Font=Theme.Font(10.5f);
             cancel.Margin=new Padding(0,0,0,2);
             progress.Controls.Add(cancel,1,0);
-            grid.Controls.Add(progress,0,3);
-            scroll.Controls.Add(grid);
+            workspace.Controls.Add(progress,0,6);
+            layout.Controls.Add(workspace,0,0);
+            scroll.Controls.Add(layout);
             Controls.Add(scroll);
 
             copyFeedback.Tick+=delegate { copyFeedback.Stop(); copy.Text="复制路径"; };

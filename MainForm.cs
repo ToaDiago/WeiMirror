@@ -51,7 +51,7 @@ namespace MirrorDesk
         static PalettePicker Picker()
         {
             return new PalettePicker { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top,
-                IntegralHeight = true, FlatStyle = FlatStyle.Flat, Margin = Padding.Empty };
+                IntegralHeight = true, Margin = Padding.Empty };
         }
         public MainForm(string initialEngine) : this(initialEngine, null) {}
         internal MainForm(string initialEngine, PreferencesStore store)
@@ -157,7 +157,7 @@ namespace MirrorDesk
             primary.Enabled = !busy && !closing && (core == null || wifi || sessionRequested || devices.SelectedItem is Device);
             primary.Text = core == null ? "准备投屏组件…" : WaitingForUsb ? "停止并取消重连" : playing || listening ? "停止接收" : wifi ? "开启 AirPlay 接收" : "开始 USB 投屏";
             driver.Enabled = engineRoot != null && !busy && !sessionRequested;
-            hint.Text = wifi ? "同一网络内，打开设备上的「屏幕镜像」。" : "连接并解锁，首次选择「信任此电脑」。";
+            hint.Text = wifi ? "同一网络下，打开设备的「屏幕镜像」。" : "连接并解锁设备，按提示选择「信任」。";
             showPreview.Enabled = preview != null && !preview.IsDisposed && !closing;
             settingsButton.Enabled = !closing;
             string path = engineRoot ?? RuntimePack.ComponentDownloadDirectory;
