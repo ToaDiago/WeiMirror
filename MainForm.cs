@@ -555,6 +555,7 @@ namespace MirrorDesk
             if (canClose) return;
             e.Cancel=true;
             if (closing) return;
+            pageTransition.Finish();
             closing=true; revision++; timer.Stop(); UpdateControls(); footer.Text="正在释放接收设备…";
             setupPage.CancelPreparation();
             setupPage.Enabled=false;

@@ -36,6 +36,8 @@ static class GuiQA
             bitmap.Save(Path.Combine(directory,name+".png"),System.Drawing.Imaging.ImageFormat.Png);
     }
     static Bitmap CaptureWindow(Form window) {
+        var transition=window.Controls.Find("ConsoleTransition",true).SingleOrDefault();
+        if (transition?.Visible==true) Until(()=>!transition.Visible,"page transition finished");
         window.Update();
         var bitmap=new Bitmap(window.Width,window.Height,System.Drawing.Imaging.PixelFormat.Format24bppRgb);
         try {

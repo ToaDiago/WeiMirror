@@ -303,6 +303,8 @@ namespace MirrorDesk
         readonly BrandMark logo = new BrandMark();
         TableLayoutPanel dashboard, connectionActions;
         Panel viewport;
+        Control consolePage;
+        PageTransition pageTransition;
         Label consoleSubtitle;
         DpiLayout consoleDpi;
         int consoleDpiValue=96;
@@ -311,6 +313,7 @@ namespace MirrorDesk
 
         void ChangeAppearance()
         {
+            pageTransition.Finish();
             palette=new AppPalette(appearance.SelectedIndex,darkMode.Checked);
             palette.Apply(this,primary);
             logo.Palette=palette;
@@ -324,6 +327,7 @@ namespace MirrorDesk
 
         internal void ScaleConsole(int dpi)
         {
+            pageTransition.Finish();
             consoleDpiValue=dpi;
             if (!consoleDpi.Apply(dpi,InterfaceScale,TextScale,InterfaceFont)) return;
             settingsPage.ScaleNavigation(dpi/96f*InterfaceScale);
@@ -447,9 +451,12 @@ namespace MirrorDesk
             };
             var content=new GlassPanel { Dock=DockStyle.Fill, Margin=Padding.Empty };
             settingsPage.Visible=setupPage.Visible=false;
+            consolePage=viewport;
+            pageTransition=new PageTransition();
             content.Controls.Add(viewport);
             content.Controls.Add(settingsPage);
             content.Controls.Add(setupPage);
+            content.Controls.Add(pageTransition);
             page.Controls.Add(content,0,1);
             Controls.Add(page);
             consoleDpi=new DpiLayout(this);
@@ -459,20 +466,23 @@ namespace MirrorDesk
 
         void ShowConsolePage(Control page)
         {
+            if (page==consolePage) return;
             bool receiver=page==viewport;
-            var content=viewport.Parent;
+            var content=consolePage.Parent;
+            pageTransition.Begin(consolePage,UiPixels(receiver ? -6 : 6));
             content.SuspendLayout();
             try {
-                viewport.Visible=receiver;
-                settingsPage.Visible=page==settingsPage;
-                setupPage.Visible=page==setupPage;
-                page.BringToFront();
+                page.Visible=true;
+                content.Controls.SetChildIndex(page,pageTransition.IsActive ? 1 : 0);
+                consolePage.Visible=false;
+                consolePage=page;
             } finally { content.ResumeLayout(true); }
             consoleSubtitle.Text=receiver ? "" : page==settingsPage ? "设置" : "组件准备";
             settingsButton.Text=receiver ? "设置" : "返回投屏";
             settingsButton.Symbol=receiver ? InterfaceGlyph.Settings : InterfaceGlyph.None;
             detail.SetToolTip(settingsButton,receiver ? "打开设置（Ctrl+,）" : "返回投屏控制台（Esc）");
             settingsButton.Focus();
+            pageTransition.Play(page);
         }
 
         void ReturnToConsole()
