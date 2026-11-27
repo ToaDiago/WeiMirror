@@ -2,7 +2,7 @@
 
 微映是一款运行在 Windows 上的 iPad、iPhone 投屏接收程序，支持 USB 数据线和无线 AirPlay。主界面用于连接设备和查看接收状态，收到画面后会打开独立的投屏窗口。
 
-[下载最新版 WeiMirror.exe](https://github.com/GloryPkqa/WeiMirror/releases/latest/download/WeiMirror.exe) · [v1.4.9 发布说明](https://github.com/GloryPkqa/WeiMirror/releases/tag/v1.4.9)
+[下载最新版 WeiMirror.exe](https://github.com/ToaDiago/WeiMirror/releases/latest/download/WeiMirror.exe) · [v1.4.9 发布说明](https://github.com/ToaDiago/WeiMirror/releases/tag/v1.4.9)
 
 ## 界面
 
