@@ -8,8 +8,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("微映 · WeiMirror")]
 [assembly: AssemblyProduct("WeiMirror")]
 [assembly: AssemblyDescription("iPad 和 iPhone 的 USB / AirPlay 投屏接收端")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.5.1.0")]
+[assembly: AssemblyFileVersion("1.5.1.0")]
 
 namespace MirrorDesk
 {

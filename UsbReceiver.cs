@@ -140,7 +140,7 @@ namespace MirrorDesk
             lock (processGate)
             {
                 if (coreInUse) throw new InvalidOperationException("此进程已有接收引擎。");
-                string corePath = Path.Combine(this.engineDirectory, CoreLibrary);
+                string corePath = NativeCoreRuntime.ResolveLibrary(this.engineDirectory);
                 if (!File.Exists(corePath)) throw new FileNotFoundException("缺少接收核心。", corePath);
                 // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32.
                 module = LoadLibraryExW(corePath, IntPtr.Zero, 0x100 | 0x800);

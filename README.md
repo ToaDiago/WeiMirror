@@ -35,7 +35,7 @@ USB 和 AirPlay 切换使用带折射的玻璃选中层，并在按下时提供�
 
 ## 从源码构建
 
-源码构建需要 Windows x64、PowerShell 7 和 .NET Framework 4.8。进入项目目录后运行：
+源码构建需要 Windows x64、PowerShell 7、.NET Framework 4.8，以及带 CMake、Ninja 和 Windows SDK 的 Visual Studio C++ Build Tools。进入项目目录后运行：
 
 ```powershell
 ./build.ps1

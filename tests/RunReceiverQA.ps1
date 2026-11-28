@@ -71,7 +71,7 @@ foreach ($name in 'airplay2dll.dll','avcodec-58.dll','avutil-56.dll','dnssd.dll'
     [IO.File]::WriteAllBytes((Join-Path $wireless $name),[byte[]]@())
 }
 $test = Join-Path $BuildRoot 'ReceiverQA.exe'
-$sources = @((Join-Path $project 'UsbReceiver.cs'),(Join-Path $project 'UsbDiagnostics.cs'),(Join-Path $project 'WirelessReceiver.cs'),(Join-Path $project 'NativeSnapshot.cs'),(Join-Path $PSScriptRoot 'ReceiverQA.cs'))
+$sources = @((Join-Path $project 'UsbReceiver.cs'),(Join-Path $project 'NativeCoreRuntime.cs'),(Join-Path $project 'UsbDiagnostics.cs'),(Join-Path $project 'WirelessReceiver.cs'),(Join-Path $project 'NativeSnapshot.cs'),(Join-Path $PSScriptRoot 'ReceiverQA.cs'))
 & $compile -Name ReceiverQA -Sources $sources -ExtraRefs $support -Out $test
 & $test $runtime
 if ($LASTEXITCODE) { throw "Receiver integration failed with $LASTEXITCODE" }

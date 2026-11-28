@@ -1,5 +1,6 @@
 # Builds the x64 Windows desktop executable, including its complete source archive.
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'bin'))
+param([string]$OutputDirectory = (Join-Path $PSScriptRoot 'bin'),
+      [string]$VisualStudioRoot = $env:WEIMIRROR_VS_ROOT)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $outDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
@@ -9,14 +10,18 @@ $csharp = Join-Path $PSHOME 'Microsoft.CodeAnalysis.CSharp.dll'
 if (!(Test-Path $csharp)) { throw 'Run this script in PowerShell 7 for Windows x64 (pwsh).' }
 Add-Type -Path (Join-Path $PSHOME 'Microsoft.CodeAnalysis.dll')
 Add-Type -Path $csharp
+# The distributed EXE always carries the audio core built from included source.
+& (Join-Path $root 'native\build.ps1') -VisualStudioRoot $VisualStudioRoot -OutputDirectory (Join-Path $root 'work\native-build') | Out-Host
+$nativeCore = Join-Path $root 'work\native-build\src\Core\iPhoneMirror.Core.dll'
 $files = @(Get-ChildItem -LiteralPath $root -File -Force | Sort-Object Name)
 $testFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'tests') -File -Recurse | Sort-Object FullName)
+$nativeFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'native') -File -Recurse | Sort-Object FullName)
 $archive = Join-Path $outDir 'WeiMirror.Source.zip'
 $zipStream = [IO.File]::Create($archive)
 try {
     $zip = [IO.Compression.ZipArchive]::new($zipStream,[IO.Compression.ZipArchiveMode]::Create,$true)
     try {
-        foreach ($file in ($files + $testFiles)) {
+        foreach ($file in ($files + $testFiles + $nativeFiles)) {
             $relativePath = [IO.Path]::GetRelativePath($root,$file.FullName).Replace('\','/')
             $entry = $zip.CreateEntry($relativePath,[IO.Compression.CompressionLevel]::Optimal)
             $entry.LastWriteTime = [DateTimeOffset]::new(2000,1,1,0,0,0,[TimeSpan]::Zero)
@@ -39,7 +44,7 @@ if (!('WeiMirrorBuild.FileResource' -as [type])) {
     Add-Type -TypeDefinition 'namespace WeiMirrorBuild { public class FileResource { private readonly string path; public FileResource(string file) { path=file; } public System.IO.Stream Open() { return System.IO.File.OpenRead(path); } } }'
 }
 $resources = [Collections.Generic.List[Microsoft.CodeAnalysis.ResourceDescription]]::new()
-foreach ($pair in @(@('WeiMirror.Source.zip',$archive),@('WeiMirror.ico',(Join-Path $root 'WeiMirror.ico')),@('WeiMirror.LatencyTest.html',(Join-Path $root 'LatencyTest.html')))) {
+foreach ($pair in @(@('WeiMirror.Source.zip',$archive),@('WeiMirror.ico',(Join-Path $root 'WeiMirror.ico')),@('WeiMirror.LatencyTest.html',(Join-Path $root 'LatencyTest.html')),@('WeiMirror.NativeCore.dll',$nativeCore))) {
     $provider = [WeiMirrorBuild.FileResource]::new($pair[1])
     $resources.Add([Microsoft.CodeAnalysis.ResourceDescription]::new($pair[0],[Func[IO.Stream]]$provider.Open,$true))
 }

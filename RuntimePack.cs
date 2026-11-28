@@ -312,6 +312,8 @@ namespace MirrorDesk
             foreach (string name in Native) files.Add(new KeyValuePair<string, string>(name, Path.Combine(engineRoot, name)));
             if (File.Exists(source + ".config")) files.Add(new KeyValuePair<string, string>("WeiMirror.exe.config", source + ".config"));
             var hashes = files.Select(p => DigestFile(p.Value)).ToArray();
+            int bundledCore = NativeCoreRuntime.BundledHash == null ? -1 : files.FindIndex(p => p.Key == Core);
+            if (bundledCore >= 0) hashes[bundledCore] = NativeCoreRuntime.BundledHash;
             string key;
             using (var hash = SHA256.Create()) key = Hex(hash.ComputeHash(Encoding.UTF8.GetBytes(String.Join("|", hashes))));
             string hostRoot = Path.Combine(DataDir, "hosts");
@@ -331,7 +333,8 @@ namespace MirrorDesk
                     for (int i = 0; i < files.Count; i++)
                     {
                         string dest = Path.Combine(stage, files[i].Key);
-                        File.Copy(files[i].Value, dest);
+                        if (i == bundledCore) NativeCoreRuntime.WriteCore(dest);
+                        else File.Copy(files[i].Value, dest);
                         if (DigestFile(dest) != hashes[i]) throw new IOException("准备投屏进程期间文件发生变化，请重试。");
                     }
                     try { Directory.Move(stage, final); return Path.Combine(final, "WeiMirror.exe"); }

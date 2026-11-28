@@ -5,24 +5,32 @@
 ## 生成 EXE
 
 1. 将完整源码压缩包解压到可写目录。
-2. 在 Windows x64 上打开 PowerShell 7（`pwsh`），进入含有 `build.ps1` 的目录。脚本使用 PowerShell 7 自带的 Roslyn 编译器，以及本机 .NET Framework 4.8 的 x64 桌面程序集。
+2. 安装 Visual Studio 2022/2026 的 C++ Build Tools、CMake、Ninja 和 Windows 10/11 SDK。在 Windows x64 上打开 PowerShell 7（`pwsh`），进入含有 `build.ps1` 的目录。桌面程序使用 PowerShell 7 自带的 Roslyn 编译器，以及本机 .NET Framework 4.8 的 x64 桌面程序集；音频核心从 `native/` 中的固定版本源码编译。
 3. 运行下列命令。成功后生成 `bin/WeiMirror.exe` 和 `bin/WeiMirror.Source.zip`。这份源码归档也嵌在 EXE 中，可以在程序内导出。
 
 ```powershell
 ./build.ps1
+# 使用未注册的便携构建工具时，可指定位置：
+./build.ps1 -VisualStudioRoot 'D:\BuildTools'
 ```
 
 ## 准备投屏组件
 
 下载和导入 ZIP 的组件保存在 `%LOCALAPPDATA%\WeiMirror\packs` 下的版本子目录。准备窗口会显示本次的完整路径。连接面板显示当前实际使用的组件目录，支持打开文件夹。选择已有目录时会直接使用所选组件。微映会在 `%LOCALAPPDATA%\WeiMirror\hosts` 中保存启动投屏所需的工作副本。
 
-桌面程序加载 iPhoneMirror v1.8.3 的原生组件。首次使用时可在程序中准备组件，也可使用从项目发布页下载的便携 ZIP。文件名为 `iPhoneMirror-v1.8.3-win-x64.zip`，官方 SHA-256 如下。
+桌面程序使用 iPhoneMirror v1.8.3 的原生组件，并内嵌由 `native/` 源码构建的音频延迟修正版 Core。启动时会将修正版 Core 写入独立的工作副本，原组件目录不受修改。首次使用时可在程序中准备组件，也可使用从项目发布页下载的便携 ZIP。文件名为 `iPhoneMirror-v1.8.3-win-x64.zip`，官方 SHA-256 如下。
 
 ```text
 97c5ded39a9437069cb24fd4ee59fe9775c1ebcf2700e3fd6305c9e424396bf0
 ```
 
 下载与版本信息见 [iPhoneMirror v1.8.3 发布页](https://github.com/RayrenSX/iPhoneMirror/releases/tag/v1.8.3)。希望自行构建引擎时，使用[同一标签的源码和脚本](https://github.com/RayrenSX/iPhoneMirror/tree/v1.8.3)。许可与第三方来源见 `NOTICE.txt`、`LICENSE.txt`。
+
+## 本地音频延迟修正版 1.5.1
+
+USB 的基础启动缓冲从固定 3072 帧改为 20 ms，无线从 180 ms 改为 40 ms。基础积压上限分别为 60 ms 和 100 ms；实际阈值会按音频包大小和 Windows 端点缓冲增大。超过阈值时丢弃旧音频以追赶，短包立即交给播放端点。数值仅描述本地队列，不能作为端到端延迟保证。较小的无线缓冲可能在网络抖动时出现短暂断音，需要实机对比。
+
+原生回归检查：`./native/build.ps1 -RunTests`。源码来源、修改点和可选端点检查见 `native/SOURCE.md`。诊断日志沿用 `%TEMP%\iPhoneMirror-capture.log`，其中 `policy=weimirror-1.5.1` 可确认修正版音频策略已经加载。
 
 ## 投屏窗口和设置
 
