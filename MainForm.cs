@@ -67,6 +67,7 @@ namespace MirrorDesk
                 mode.SelectedIndex=saved.Wireless ? 1 : 0;
                 quality.SelectedIndex=saved.QualityIndex; name.Text=saved.ReceiverName;
                 audio.Checked=saved.PlayAudio; pinned=saved.AlwaysOnTop; previewLayout=saved.PreviewLayout;
+                customColors=saved.CustomColors;
                 appearance.SelectedIndex=saved.ThemeIndex;
                 darkMode.Checked=saved.DarkMode;
                 alwaysShowToolbar=showToolbar.Checked=saved.AlwaysShowToolbar;
@@ -134,6 +135,7 @@ namespace MirrorDesk
                 Wireless=Wireless, ReceiverName=name.Text, QualityIndex=quality.SelectedIndex,
                 PlayAudio=audio.Checked, AlwaysOnTop=pinned, PreviewLayout=previewLayout,
                 ThemeIndex=appearance.SelectedIndex, DarkMode=darkMode.Checked, AlwaysShowToolbar=alwaysShowToolbar,
+                CustomColors=customColors,
                 InterfaceFont=InterfaceFont, TextPercent=TextPercent, InterfaceSize=interfaceSize.SelectedIndex
             };
             preferencesDirty=!preferencesStore.TrySave(next);
@@ -174,8 +176,9 @@ namespace MirrorDesk
         {
             string receiver=name.Text.Trim();
             if (receiver.Length==0) receiver="未命名";
-            if (airReceiver.Text==receiver) return;
-            airReceiver.Text=receiver;
+            string caption="接收端  "+receiver;
+            if (airReceiver.Text==caption) return;
+            airReceiver.Text=caption;
             detail.SetToolTip(airReceiver,receiver);
         }
 

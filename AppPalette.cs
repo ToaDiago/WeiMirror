@@ -92,38 +92,67 @@ namespace MirrorDesk
 
     internal sealed class AppPalette
     {
-        internal static readonly string[] Names = { "经典", "太空", "冰川", "日落" };
-        static readonly int[] LightAccent = { 0x166B68, 0x5D429C, 0x185F9F, 0x9B4A29 };
-        static readonly int[] DarkAccent = { 0x69DCCE, 0xBDA4FF, 0x82C2FF, 0xFFAE8B };
-        static readonly int[] Headers = { 0x19343A, 0x251F45, 0x142D49, 0x492C34 };
-        static readonly int[] DarkCanvases = { 0x132036, 0x19152F, 0x122438, 0x2B1C29 };
-        static readonly int[] LightCanvases = { 0xE7EEF8, 0xECE7F8, 0xE5F1F9, 0xF9E9E4 };
-        static readonly int[] GlassAtmospheres = { 0x879DDA, 0xA086DB, 0x76B8E2, 0xE99C85 };
-        static readonly int[] GlassCaustics = { 0x64BBCD, 0x7BAEDB, 0x79CBBF, 0xC094DC };
-        static readonly int[] GlassActions = { 0x254A7D, 0x54388E, 0x155C92, 0x973F3A };
         public readonly Color Canvas, Surface, Ink, Muted, Header, Accent, AccentInk, Selection, Border, Hover, Alert;
         public readonly Color Atmosphere, Caustic, Action, Field;
         public readonly bool Dark;
 
-        public AppPalette(int theme,bool dark)
+        public AppPalette(int theme,bool dark) : this(theme,dark,CustomThemeColors.Default) {}
+
+        internal AppPalette(int theme,bool dark,CustomThemeColors custom)
         {
-            if (theme<0 || theme>=Names.Length) theme=0;
             Dark=dark;
-            Atmosphere=Rgb(GlassAtmospheres[theme]);
-            Caustic=Rgb(GlassCaustics[theme]);
-            Action=Rgb(GlassActions[theme]);
-            Canvas=Rgb(dark ? DarkCanvases[theme] : LightCanvases[theme]);
+            if (theme==ThemeOptions.CustomIndex) {
+                Canvas=dark ? LimitLuminance(custom.DarkBackground,.055,false) :
+                    LimitLuminance(custom.LightBackground,.70,true);
+                Accent=LimitLuminance(custom.Accent,dark ? .56 : .105,dark);
+                Action=LimitLuminance(custom.Accent,.115,false);
+                Header=Blend(Action,Color.Black,.24);
+                Atmosphere=LimitLuminance(custom.Accent,dark ? .21 : .32,!dark);
+                Caustic=Blend(Atmosphere,Canvas,.30);
+            } else {
+                var preset=ThemeOptions.Presets[ThemeOptions.IsPreset(theme) ? theme : 0];
+                Canvas=Rgb(dark ? preset.DarkCanvas : preset.LightCanvas);
+                Accent=Rgb(dark ? preset.DarkAccent : preset.LightAccent);
+                Header=Rgb(preset.Header);
+                Atmosphere=Rgb(preset.Atmosphere);
+                Caustic=Rgb(preset.Caustic);
+                Action=Rgb(preset.Action);
+            }
             Surface=dark ? Blend(Canvas,Color.White,.065) : Color.White;
             Field=Blend(Surface,dark ? Atmosphere : Canvas,dark ? .11 : .54);
             Ink=Rgb(dark ? 0xF1F2F8 : 0x20283A);
             Muted=Rgb(dark ? 0xBEC4D3 : 0x4D5D70);
-            Header=Rgb(Headers[theme]);
-            Accent=Rgb(dark ? DarkAccent[theme] : LightAccent[theme]);
             AccentInk=dark ? Rgb(0x101620) : Color.White;
             Selection=Blend(Surface,Accent,dark ? .18 : .12);
             Border=Blend(Surface,Ink,dark ? .28 : .19);
             Hover=Blend(Surface,Accent,dark ? .24 : .16);
             Alert=Rgb(dark ? 0xFFB89D : 0x9A3426);
+        }
+
+        // Pick the closest tone of the chosen color that keeps the text readable.
+        static Color LimitLuminance(Color color,double limit,bool lighten)
+        {
+            if (FitsLuminance(color,limit,lighten)) return color;
+            Color target=lighten ? Color.White : Color.Black;
+            double low=0, high=1;
+            for (int i=0;i<9;i++) {
+                double middle=(low+high)/2;
+                if (FitsLuminance(Blend(color,target,middle),limit,lighten)) high=middle;
+                else low=middle;
+            }
+            return Blend(color,target,high);
+        }
+
+        static bool FitsLuminance(Color color,double limit,bool lighten)
+        {
+            double luminance=.2126*Linear(color.R)+.7152*Linear(color.G)+.0722*Linear(color.B);
+            return lighten ? luminance>=limit : luminance<=limit;
+        }
+
+        static double Linear(byte channel)
+        {
+            double value=channel/255.0;
+            return value<=.04045 ? value/12.92 : Math.Pow((value+.055)/1.055,2.4);
         }
 
         static Color Rgb(int value) { return Color.FromArgb(255,(value>>16)&255,(value>>8)&255,value&255); }

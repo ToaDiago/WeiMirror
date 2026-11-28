@@ -1,4 +1,5 @@
 using System;
+using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -71,6 +72,19 @@ internal static class PrefsQA
             var appearance=store.Load();
             Check(appearance.QualityIndex==0 && appearance.ThemeIndex==1 && appearance.DarkMode && appearance.AlwaysShowToolbar,
                 "new format preserves explicitly selected 1080p60, Space, dark mode and toolbar choice");
+            var colors=new CustomThemeColors(Color.Crimson,Color.Lavender,Color.MidnightBlue);
+            Check(store.TrySave(new UserPreferences { ThemeIndex=ThemeOptions.CustomIndex, CustomColors=colors }),
+                "writes custom theme colors");
+            var customized=store.Load();
+            Check(customized.ThemeIndex==ThemeOptions.CustomIndex && customized.CustomColors.Encode()==colors.Encode(),
+                "restores all three custom colors and the custom selection");
+            customized.ThemeIndex=5;
+            Check(store.TrySave(customized) && store.Load().ThemeIndex==5 &&
+                store.Load().CustomColors.Encode()==colors.Encode(),"switching to a new preset retains the custom colors");
+            File.WriteAllText(file,"format=2\ntheme=custom\ncustomColors=#000000,#123456,invalid\n");
+            Check(store.Load().ThemeIndex==ThemeOptions.CustomIndex &&
+                store.Load().CustomColors.Encode()==CustomThemeColors.Default.Encode(),
+                "corrupt custom colors fall back to the default custom theme");
             File.WriteAllText(file,"format=2\nquality=4\n");
             var replacement=WirelessProfile.Choices[store.Load().QualityIndex];
             Check(replacement.Height==1080 && replacement.Fps==60,"retired 1080p120 selection falls back to 1080p60");

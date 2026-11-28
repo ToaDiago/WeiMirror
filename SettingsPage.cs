@@ -137,10 +137,15 @@ namespace MirrorDesk
 
     internal sealed partial class MainForm
     {
+        const int ThemeColorRowHeight=42;
         readonly ComboBox appearance = Picker(), interfaceFont = Picker(),
             textPercent = Picker(), interfaceSize = Picker();
         readonly CheckBox darkMode = new GlassToggle("深色模式");
         readonly CheckBox showToolbar = new GlassToggle("始终显示投屏工具栏");
+        readonly GlassButton[] colorButtons=new GlassButton[3];
+        readonly Label[] colorLabels=new Label[3];
+        TableLayoutPanel appearanceSettings;
+        CustomThemeColors customColors=CustomThemeColors.Default;
         SettingsPage settingsPage;
 
         string InterfaceFont { get { return interfaceFont.SelectedIndex>0 ? (string)interfaceFont.SelectedItem : ""; } }
@@ -152,7 +157,7 @@ namespace MirrorDesk
         {
             if (IsHandleCreated) {
                 ScaleConsole(consoleDpiValue);
-                if (resize) FitConsole();
+                if (resize && WindowState==FormWindowState.Normal) FitConsole();
             }
         }
 
@@ -190,7 +195,7 @@ namespace MirrorDesk
             return page;
         }
 
-        static void AddSetting(TableLayoutPanel grid,int row,string label,Control field)
+        static Label AddSetting(TableLayoutPanel grid,int row,string label,Control field)
         {
             var caption=GlassUi.Label(label,10.5f,Theme.Ink);
             caption.Margin=new Padding(0,1,6,1);
@@ -200,6 +205,7 @@ namespace MirrorDesk
             field.Dock=DockStyle.None;
             field.Anchor=AnchorStyles.Left | AnchorStyles.Right;
             grid.Controls.Add(field,1,row);
+            return caption;
         }
 
         static void FullSetting(TableLayoutPanel grid,int row,Control field)
@@ -208,21 +214,54 @@ namespace MirrorDesk
             grid.SetColumnSpan(field,2);
         }
 
+        GlassButton AddThemeColor(int row,string label,string controlName,Func<Color> read,Action<Color> set)
+        {
+            var button=new GlassButton("") { Name=controlName,TextAlign=ContentAlignment.MiddleLeft };
+            colorLabels[row-1]=AddSetting(appearanceSettings,row,label,button);
+            button.Dock=DockStyle.Fill;
+            button.Margin=new Padding(0,4,0,4);
+            button.Click+=delegate {
+                using (var dialog=new ColorDialog { Color=read(),FullOpen=true,AnyColor=true,SolidColorOnly=true }) {
+                    if (dialog.ShowDialog(this)!=DialogResult.OK || dialog.Color.ToArgb()==read().ToArgb()) return;
+                    set(dialog.Color);
+                    ChangeAppearance();
+                    PreferencesChanged();
+                }
+            };
+            return button;
+        }
+
+        void UpdateThemeEditor()
+        {
+            bool editing=appearance.SelectedIndex==ThemeOptions.CustomIndex;
+            var suggested=new[] { customColors.Accent,customColors.LightBackground,customColors.DarkBackground };
+            appearanceSettings.SuspendLayout();
+            try {
+                for (int i=0;i<colorButtons.Length;i++) {
+                    int row=i+1;
+                    var button=colorButtons[i];
+                    button.SwatchColor=suggested[i];
+                    button.Text=CustomThemeColors.Hex(suggested[i]);
+                    button.Visible=editing;
+                    colorLabels[i].Visible=editing;
+                    appearanceSettings.RowStyles[row].Height=editing ? UiPixels(ThemeColorRowHeight) : 0;
+                }
+                appearanceSettings.Height=appearanceSettings.Padding.Vertical+
+                    appearanceSettings.RowStyles.Cast<RowStyle>().Sum(row=>(int)row.Height);
+            } finally { appearanceSettings.ResumeLayout(true); }
+        }
+
         void BuildSettings()
         {
-            var casting=SettingsGrid(45,45,43,43);
-            quality.Items.AddRange(WirelessProfile.Choices);
-            quality.SelectedIndex=WirelessProfile.DefaultIndex;
-            quality.Name="AirPlayQuality";
+            var casting=SettingsGrid(45,43,43);
             name.BorderStyle=BorderStyle.FixedSingle;
             AddSetting(casting,0,"接收端名称",name);
-            AddSetting(casting,1,"无线画质",quality);
             audio.Font=showToolbar.Font=Theme.Font(11);
-            FullSetting(casting,2,audio);
-            FullSetting(casting,3,showToolbar);
+            FullSetting(casting,1,audio);
+            FullSetting(casting,2,showToolbar);
 
-            var looks=SettingsGrid(43,43,43,43,42);
-            appearance.Items.AddRange(AppPalette.Names);
+            appearanceSettings=SettingsGrid(43,ThemeColorRowHeight,ThemeColorRowHeight,ThemeColorRowHeight,43,43,43,42);
+            appearance.Items.AddRange(ThemeOptions.Names);
             appearance.SelectedIndex=0;
             appearance.Name="AppearanceTheme";
             interfaceFont.Items.Add("默认（微软雅黑）");
@@ -238,12 +277,18 @@ namespace MirrorDesk
             interfaceSize.Items.AddRange(new object[] { "小","中","大" });
             interfaceSize.SelectedIndex=UserPreferences.DefaultInterfaceSize;
             interfaceSize.Name="InterfaceSize";
-            AddSetting(looks,0,"主题",appearance);
-            AddSetting(looks,1,"界面字体",interfaceFont);
-            AddSetting(looks,2,"字号",textPercent);
-            AddSetting(looks,3,"界面大小",interfaceSize);
+            AddSetting(appearanceSettings,0,"主题",appearance);
+            colorButtons[0]=AddThemeColor(1,"强调色","ThemeAccent",()=>customColors.Accent,
+                color=>customColors.Accent=color);
+            colorButtons[1]=AddThemeColor(2,"浅色背景","ThemeLightBackground",()=>customColors.LightBackground,
+                color=>customColors.LightBackground=color);
+            colorButtons[2]=AddThemeColor(3,"深色背景","ThemeDarkBackground",()=>customColors.DarkBackground,
+                color=>customColors.DarkBackground=color);
+            AddSetting(appearanceSettings,4,"界面字体",interfaceFont);
+            AddSetting(appearanceSettings,5,"字号",textPercent);
+            AddSetting(appearanceSettings,6,"界面大小",interfaceSize);
             darkMode.Font=Theme.Font(11);
-            FullSetting(looks,4,darkMode);
+            FullSetting(appearanceSettings,7,darkMode);
 
             var components=SettingsGrid(32,55,43,43);
             components.RowRules=false;
@@ -261,7 +306,7 @@ namespace MirrorDesk
                 actions[i].Margin=new Padding(0,0,0,5);
                 FullSetting(components,i+2,actions[i]);
             }
-            settingsPage=new SettingsPage(ScrollSettings(casting),ScrollSettings(looks),ScrollSettings(components),BuildToolsPage());
+            settingsPage=new SettingsPage(ScrollSettings(casting),ScrollSettings(appearanceSettings),ScrollSettings(components),BuildToolsPage());
         }
     }
 }

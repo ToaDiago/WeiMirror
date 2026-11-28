@@ -121,15 +121,15 @@ static class GuiQA
         Call(form,"ScaleConsole",testDpi);
         form.ClientSize=new Size(1176,840);
         form.PerformLayout();
-        CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),primary);
+        var quality=(ComboBox)Named(form,"AirPlayQuality");
+        CheckPaint(form,Named(form,"OpenSettings"),Named(form,"UsbMode"),Named(form,"AirPlayMode"),primary,quality);
+        CheckQualityFace(form,quality);
         ReviewImage(form,"console-wireless-200");
         Settings(settings=>{
             form.ClientSize=new Size(1016,738);
             Application.DoEvents();
-            var quality=(ComboBox)Named(settings,"AirPlayQuality");
             CheckPaint(form,Named(settings,"SettingsSection0"),Named(settings,"SettingsSection1"),
                 Field<CheckBox>(form,"audio"),Field<CheckBox>(form,"showToolbar"),Named(form,"OpenSettings"));
-            CheckQualityFace(form,quality);
             ReviewImage(form,"settings-casting-200");
         },true);
         Call(form,"ScaleConsole",originalDpi);
@@ -237,24 +237,35 @@ static class GuiQA
             string localPacks = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"WeiMirror","packs");
             Check(Preview()==null && !ShowsPath(form,localPacks) && !Named(form,"SettingsPage").Visible &&
                 !Field<ComboBox>(form,"quality").Visible,
-                "main panel keeps component paths and quality controls in settings");
+                "USB mode hides the wireless quality control and keeps component paths in settings");
             Check(primary.Font.SizeInPoints>=10 && primary.Font.SizeInPoints<12 && mode.Font.SizeInPoints<12,
                 "console uses compact default type at 100 percent");
+            SelectMode(mode,1); Idle();
+            var quality=Field<ComboBox>(form,"quality");
+            Check(quality.Visible && quality.Items.Count==6 && quality.Items.Cast<object>().All(item=>!item.ToString().Contains("120")),
+                "the AirPlay home page exposes all six profiles at up to 60 fps");
+            quality.Focus();
+            quality.DroppedDown=true;
+            Check(quality.DroppedDown,"the home page quality picker opens its native list");
+            quality.DroppedDown=false;
+            SelectMode(mode,0); Idle();
             Settings(dialog=>{
                 Check(form.Opacity==1 && !form.AllowTransparency && (GetWindowLong(form.Handle,-20)&0x00080000)==0,
                     "settings remains a normal opaque window while open");
                 Check(Descendants(form).Concat(Descendants(dialog)).Where(c=>c.Visible).All(c=>c.BackColor.A==255),
                     "visible settings controls have explicit opaque backgrounds");
-                var quality=(ComboBox)Named(dialog,"AirPlayQuality");
-                Check(quality.Visible && quality.Items.Count==6 && quality.Items.Cast<object>().All(item=>!item.ToString().Contains("120")),
-                    "AirPlay settings exposes six profiles at up to 60 fps");
-                quality.Focus();
-                quality.DroppedDown=true;
-                Check(quality.DroppedDown,"glass picker opens the native AirPlay list");
-                quality.DroppedDown=false;
+                Check(!Descendants(dialog).Contains(quality),"settings uses the homepage quality picker without a duplicate");
                 SettingsPage(dialog,2);
                 Check(ShowsPath(dialog,localPacks),"components settings shows the download directory before setup");
                 SettingsPage(dialog,1);
+                var theme=(ComboBox)Named(dialog,"AppearanceTheme");
+                Check(theme.Items.Count==9 && theme.FindStringExact("薄荷")>=0 && theme.FindStringExact("石墨")>=0,
+                    "appearance offers eight presets and a custom theme");
+                theme.SelectedIndex=theme.FindStringExact("自定义");
+                Check(Named(dialog,"ThemeAccent").Visible && Named(dialog,"ThemeLightBackground").Visible &&
+                    Named(dialog,"ThemeDarkBackground").Visible,"the custom theme shows three color pickers");
+                theme.SelectedIndex=0;
+                Check(!Named(dialog,"ThemeAccent").Visible,"preset themes collapse the custom colors");
                 var scale=(ComboBox)Named(dialog,"TextPercent");
                 var size=(ComboBox)Named(dialog,"InterfaceSize");
                 var fonts=(ComboBox)Named(dialog,"InterfaceFont");
@@ -355,24 +366,24 @@ static class GuiQA
             VerifyCloseDuringSnapshot(primary);
             VerifyUsbRecovery(primary,mode);
             SelectMode(mode,1); Idle(); FixtureSupport.ShowAirDevice = false;
-            var quality=Field<ComboBox>(form,"quality");
             Check(quality.Items.Count>=4 && quality.Items[3].ToString().Contains("720") && quality.Items[3].ToString().Contains("60"),
                 "720p60 is selectable without changing the original three quality options");
             Settings(dialog=>{
                 SettingsPage(dialog,0);
                 Field<TextBox>(form,"name").Text = "测验接收端";
-                quality.SelectedIndex = 3;
             });
+            quality.SelectedIndex=3;
             Click(primary);
             Until(()=>Field<Label>(form,"footer").Text.Contains("等待 iPad"),"wireless waiting");
             Check(Preview()==null && FixtureSupport.ReceiverName=="测验接收端" && FixtureSupport.ReceiverWidth==1280 &&
                 FixtureSupport.ReceiverFps==30 && String.Equals(FixtureSupport.ReceiverHost,assembly.Location,StringComparison.OrdinalIgnoreCase) &&
                 String.Equals(FixtureSupport.ReceiverLibraryDirectory,Path.Combine(runtime,"Wireless"),StringComparison.OrdinalIgnoreCase) &&
                 !FixtureSupport.Allocated,"selecting 720p60 uses the custom host with the stock carrier and waits without an empty projection");
+            Check(quality.Visible && !quality.Enabled && quality.Text.Contains("720"),
+                "the home page preserves the active quality while AirPlay is running");
             Settings(dialog=>{
                 SettingsPage(dialog,0);
-                Check(!quality.Enabled && quality.Text.Contains("720") && !Field<TextBox>(form,"name").Enabled,
-                    "broadcast locks the active name and quality while retaining their displayed values");
+                Check(!Field<TextBox>(form,"name").Enabled,"broadcast locks the active receiver name");
             });
             FixtureSupport.ShowAirDevice = true;
             Until(()=>Field<Label>(form,"footer").Text.Contains("客厅 iPad") && StatText().Contains("59.5"),"wireless attach and display");

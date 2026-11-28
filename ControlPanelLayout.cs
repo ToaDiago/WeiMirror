@@ -297,11 +297,11 @@ namespace MirrorDesk
         }
 
         readonly ReceptionBadge sessionBadge = new ReceptionBadge { Dock=DockStyle.Fill, Margin=Padding.Empty };
-        readonly Label airReceiver = GlassUi.Label("",11.5f,Theme.Ink,true);
+        readonly Label airReceiver = GlassUi.Label("",10.5f,Theme.Ink,true);
         Control usbDetails, airDetails, visibleConnectionDetails;
         readonly GlassButton settingsButton = new GlassButton("设置") { Symbol=InterfaceGlyph.Settings,ClearGlass=true };
         readonly BrandMark logo = new BrandMark();
-        TableLayoutPanel dashboard, connectionActions;
+        TableLayoutPanel consoleFrame, dashboard, connectionActions, connectionGuidance;
         Panel viewport;
         Control consolePage;
         PageTransition pageTransition;
@@ -314,7 +314,8 @@ namespace MirrorDesk
         void ChangeAppearance()
         {
             pageTransition.Finish();
-            palette=new AppPalette(appearance.SelectedIndex,darkMode.Checked);
+            palette=new AppPalette(appearance.SelectedIndex,darkMode.Checked,customColors);
+            UpdateThemeEditor();
             palette.Apply(this,primary);
             logo.Palette=palette;
             logo.Invalidate();
@@ -331,9 +332,10 @@ namespace MirrorDesk
             consoleDpiValue=dpi;
             if (!consoleDpi.Apply(dpi,InterfaceScale,TextScale,InterfaceFont)) return;
             settingsPage.ScaleNavigation(dpi/96f*InterfaceScale);
+            UpdateThemeEditor();
             var area=Screen.FromControl(this).WorkingArea;
             MinimumSize=new Size(Math.Min(UiPixels(398),area.Width),Math.Min(UiPixels(300),area.Height));
-            ArrangeConnectionActions();
+            ArrangeConsole();
         }
 
         protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -344,26 +346,36 @@ namespace MirrorDesk
 
         protected override void OnResize(EventArgs e)
         {
+            if (WindowState==FormWindowState.Minimized) pageTransition?.Finish();
             base.OnResize(e);
-            ArrangeConnectionActions();
+            ArrangeConsole();
         }
 
-        void ArrangeConnectionActions()
+        void ArrangeConsole()
         {
-            if (consoleDpi==null) return;
-            bool stacked=ClientSize.Width<UiPixels(474);
+            if (consoleDpi==null || WindowState==FormWindowState.Minimized) return;
+            int width=Math.Min(ClientSize.Width,UiPixels(780));
+            int height=Math.Min(ClientSize.Height,UiPixels(530));
+            consoleFrame.Bounds=new Rectangle((ClientSize.Width-width)/2,0,width,height);
+            ArrangeConnectionActions(width);
+        }
+
+        void ArrangeConnectionActions(int width)
+        {
+            bool stacked=width<UiPixels(474);
             if (connectionActions.GetRow(primary)!=(stacked ? 1 : 0)) {
                 connectionActions.SuspendLayout();
                 if (stacked) {
                     connectionActions.SetRow(primary,1);
-                    connectionActions.SetColumnSpan(hint,2);
+                    connectionActions.SetColumnSpan(connectionGuidance,2);
                 } else {
-                    connectionActions.SetColumnSpan(hint,1);
+                    connectionActions.SetColumnSpan(connectionGuidance,1);
                     connectionActions.SetRow(primary,0);
                 }
                 connectionActions.ResumeLayout();
             }
             connectionActions.RowStyles[1].Height=stacked ? UiPixels(49) : 0;
+            connectionGuidance.RowStyles[0].Height=Wireless ? UiPixels(23) : 0;
             dashboard.Height=UiPixels(stacked ? 369 : 332);
             viewport.AutoScrollMinSize=new Size(0,dashboard.Height);
         }
@@ -412,6 +424,10 @@ namespace MirrorDesk
             MinimumSize=new Size(398,300); ClientSize=new Size(588,406);
 
             var page=GlassUi.Grid(1,2); Theme.Cols(page,-1); Theme.Rows(page,67,-1);
+            page.Dock=DockStyle.None;
+            page.Anchor=AnchorStyles.Top | AnchorStyles.Left;
+            page.Bounds=ClientRectangle;
+            consoleFrame=page;
             var header=GlassUi.Grid(4,1); Theme.Cols(header,48,86,-1,105); Theme.Rows(header,-1);
             header.Padding=new Padding(22,0,23,0);
             logo.Dock=DockStyle.Fill; logo.Margin=new Padding(0,12,9,12); logo.TabStop=false;
@@ -511,25 +527,45 @@ namespace MirrorDesk
             var usbPick=GlassUi.Grid(2,1); usbPick.Name="UsbPick"; Theme.Cols(usbPick,-1,81); Theme.Rows(usbPick,-1);
             refresh.Font=Theme.Font(10.5f); refresh.Margin=new Padding(8,0,0,0);
             usbPick.Controls.Add(devices,0,0); usbPick.Controls.Add(refresh,1,0);
-            var receiver=GlassUi.Grid(2,1);
-            Theme.Cols(receiver,112,-1); Theme.Rows(receiver,-1);
-            var caption=GlassUi.Label("接收端名称",10,Theme.Muted);
+            var air=GlassUi.Grid(2,1);
+            Theme.Cols(air,74,-1); Theme.Rows(air,-1);
+            var caption=GlassUi.Label("清晰度",10.5f,Theme.Muted);
             caption.Name="Muted";
-            receiver.Controls.Add(caption,0,0);
-            airReceiver.AccessibleName="AirPlay 接收端名称";
-            receiver.Controls.Add(airReceiver,1,0);
-            receiver.Visible=false;
-            airDetails=receiver;
+            quality.Name="AirPlayQuality";
+            quality.AccessibleName="无线投屏清晰度";
+            quality.Font=Theme.Font(10.5f);
+            quality.Dock=DockStyle.None;
+            quality.Anchor=AnchorStyles.Left|AnchorStyles.Right;
+            quality.Items.AddRange(WirelessProfile.Choices);
+            quality.SelectedIndex=WirelessProfile.DefaultIndex;
+            quality.SelectedIndexChanged+=delegate { detail.SetToolTip(quality,quality.Text); };
+            quality.DropDown+=delegate {
+                int width=quality.Width;
+                foreach (var choice in WirelessProfile.Choices)
+                    width=Math.Max(width,TextRenderer.MeasureText(choice.ToString(),quality.Font).Width+UiPixels(16));
+                quality.DropDownWidth=width;
+            };
+            detail.SetToolTip(quality,quality.Text);
+            air.Controls.Add(caption,0,0);
+            air.Controls.Add(quality,1,0);
+            air.Visible=false;
+            airDetails=air;
             usbDetails=visibleConnectionDetails=usbPick;
-            input.Controls.Add(receiver); input.Controls.Add(usbPick);
+            input.Controls.Add(air); input.Controls.Add(usbPick);
             card.Controls.Add(input,0,3);
 
             hint.Font=Theme.Font(10); hint.Name="Muted";
             hint.TextChanged+=delegate { detail.SetToolTip(hint,hint.Text); };
             connectionActions=GlassUi.Grid(2,2);
             Theme.Cols(connectionActions,-1,187); Theme.Rows(connectionActions,-1,0);
-            hint.Margin=new Padding(0,0,12,0);
-            connectionActions.Controls.Add(hint,0,0);
+            connectionGuidance=GlassUi.Grid(1,2);
+            connectionGuidance.Margin=new Padding(0,0,12,0);
+            Theme.Cols(connectionGuidance,-1); Theme.Rows(connectionGuidance,0,-1);
+            airReceiver.Name="AirPlayReceiverName";
+            airReceiver.Visible=false;
+            connectionGuidance.Controls.Add(airReceiver,0,0);
+            connectionGuidance.Controls.Add(hint,0,1);
+            connectionActions.Controls.Add(connectionGuidance,0,0);
             primary.Font=Theme.Font(11,true);
             primary.Margin=new Padding(0,7,0,7);
             connectionActions.Controls.Add(primary,1,0);
@@ -548,6 +584,11 @@ namespace MirrorDesk
                 visibleConnectionDetails.Visible=false;
                 visibleConnectionDetails=next;
             } finally { input.ResumeLayout(true); }
+            connectionGuidance.SuspendLayout();
+            try {
+                connectionGuidance.RowStyles[0].Height=wireless ? UiPixels(23) : 0;
+                airReceiver.Visible=wireless;
+            } finally { connectionGuidance.ResumeLayout(true); }
         }
 
         Control BuildSessionRow()

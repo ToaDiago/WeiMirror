@@ -16,6 +16,7 @@ namespace MirrorDesk
         public bool AlwaysOnTop { get; set; }
         public int QualityIndex { get; set; } = WirelessProfile.DefaultIndex;
         public int ThemeIndex { get; set; }
+        public CustomThemeColors CustomColors { get; set; } = CustomThemeColors.Default;
         public bool DarkMode { get; set; }
         public bool AlwaysShowToolbar { get; set; }
         public string ReceiverName { get; set; } = "WeiMirror";
@@ -76,8 +77,13 @@ namespace MirrorDesk
                                     legacy=value!="2";
                                     break;
                                 case "theme":
-                                    if (Int32.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out index) && index<4)
+                                    if (value=="custom") prefs.ThemeIndex=ThemeOptions.CustomIndex;
+                                    else if (Int32.TryParse(value,NumberStyles.None,CultureInfo.InvariantCulture,out index) &&
+                                        ThemeOptions.IsPreset(index))
                                         prefs.ThemeIndex=index;
+                                    break;
+                                case "customColors":
+                                    if (CustomThemeColors.TryDecode(value,out var colors)) prefs.CustomColors=colors;
                                     break;
                                 case "dark":
                                     if (Boolean.TryParse(value,out flag)) prefs.DarkMode=flag;
@@ -168,7 +174,9 @@ namespace MirrorDesk
                 Directory.CreateDirectory(Path.GetDirectoryName(filePath));
                 File.WriteAllLines(temp, new[] {
                     "format=2",
-                    "theme=" + prefs.ThemeIndex.ToString(CultureInfo.InvariantCulture),
+                    "theme=" + (prefs.ThemeIndex==ThemeOptions.CustomIndex ? "custom" :
+                        (ThemeOptions.IsPreset(prefs.ThemeIndex) ? prefs.ThemeIndex : 0).ToString(CultureInfo.InvariantCulture)),
+                    "customColors=" + prefs.CustomColors.Encode(),
                     "dark=" + prefs.DarkMode,
                     "toolbar=" + prefs.AlwaysShowToolbar,
                     "transport=" + (prefs.Wireless ? "airplay" : "usb"),

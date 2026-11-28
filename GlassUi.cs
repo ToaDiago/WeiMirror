@@ -2,6 +2,8 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 
 namespace MirrorDesk
@@ -15,7 +17,63 @@ namespace MirrorDesk
 
     internal static class GlassUi
     {
+        const int CachePixelLimit=4096*2160;
         static readonly AppPalette DefaultPalette=new AppPalette(0,false);
+        static readonly ConditionalWeakTable<Form,BackdropBuffer> Backdrops=new ConditionalWeakTable<Form,BackdropBuffer>();
+        static readonly ConditionalWeakTable<Control,PaneBuffer> Panes=new ConditionalWeakTable<Control,PaneBuffer>();
+
+        sealed class BackdropBuffer
+        {
+            Bitmap image;
+            AppPalette palette;
+
+            public BackdropBuffer(Form owner)
+            {
+                owner.Disposed+=delegate { image?.Dispose(); image=null; };
+            }
+
+            public Bitmap Get(Size size,AppPalette next)
+            {
+                if (image!=null && image.Size==size && palette==next) return image;
+                image?.Dispose();
+                image=null;
+                image=new Bitmap(size.Width,size.Height,PixelFormat.Format32bppRgb);
+                using (var graphics=Graphics.FromImage(image))
+                    PaintBackdrop(graphics,new Rectangle(Point.Empty,size),next);
+                palette=next;
+                return image;
+            }
+        }
+
+        sealed class PaneBuffer
+        {
+            Bitmap image;
+            AppPalette palette;
+            Rectangle bounds;
+            Size windowSize;
+            int radius;
+
+            public PaneBuffer(Control owner)
+            {
+                owner.Disposed+=delegate { image?.Dispose(); image=null; };
+            }
+
+            public Bitmap Get(Control pane,Form window,int corner,AppPalette next)
+            {
+                var area=new Rectangle(OriginInWindow(pane,window),pane.Size);
+                if (image!=null && bounds==area && windowSize==window.ClientSize && radius==corner && palette==next)
+                    return image;
+                image?.Dispose();
+                image=null;
+                image=new Bitmap(area.Width,area.Height,PixelFormat.Format32bppRgb);
+                using (var graphics=Graphics.FromImage(image)) PaintPane(graphics,pane,corner,next);
+                bounds=area;
+                windowSize=window.ClientSize;
+                radius=corner;
+                palette=next;
+                return image;
+            }
+        }
 
         internal static GlassGrid Grid(int columns,int rows)
         {
@@ -105,25 +163,38 @@ namespace MirrorDesk
             Form window=surface.FindForm();
             var bounds=window?.ClientRectangle ?? surface.ClientRectangle;
             if (bounds.Width<2 || bounds.Height<2) return;
+            var origin=OriginInWindow(surface,window);
+            var state=g.Save();
+            g.SetClip(surface.ClientRectangle,CombineMode.Intersect);
+            if (SystemInformation.HighContrast) {
+                using (var solid=new SolidBrush(SystemColors.Window)) g.FillRectangle(solid,surface.ClientRectangle);
+            } else if (window!=null && (long)bounds.Width*bounds.Height<=CachePixelLimit) {
+                var scene=Backdrops.GetValue(window,owner=>new BackdropBuffer(owner)).Get(bounds.Size,palette);
+                g.DrawImageUnscaled(scene,-origin.X,-origin.Y);
+            } else {
+                g.TranslateTransform(-origin.X,-origin.Y);
+                PaintBackdrop(g,bounds,palette);
+            }
+            g.Restore(state);
+        }
+
+        static Point OriginInWindow(Control surface,Form window)
+        {
             var origin=Point.Empty;
             for (Control c=surface; c!=null && c!=window; c=c.Parent)
                 origin.Offset(c.Left,c.Top);
-            var state=g.Save();
-            g.SetClip(surface.ClientRectangle,CombineMode.Intersect);
-            g.TranslateTransform(-origin.X,-origin.Y);
+            return origin;
+        }
+
+        static void PaintBackdrop(Graphics g,Rectangle bounds,AppPalette palette)
+        {
             var fill=Rectangle.Inflate(bounds,32,32);
-            if (SystemInformation.HighContrast) {
-                using (var solid=new SolidBrush(SystemColors.Window)) g.FillRectangle(solid,fill);
-                g.Restore(state);
-                return;
-            }
             Color light=AppPalette.Blend(palette.Canvas,Color.White,palette.Dark ? .025 : .63);
             Color deep=AppPalette.Blend(palette.Canvas,palette.Atmosphere,palette.Dark ? .073 : .15);
             using (var wash=new LinearGradientBrush(fill,light,deep,105f)) g.FillRectangle(wash,fill);
             float w=bounds.Width, h=bounds.Height;
             Light(g,new RectangleF(w*.44f,-h*.47f,w*1.02f,h*1.42f),palette.Atmosphere,palette.Dark ? 57 : 97);
             Light(g,new RectangleF(-w*.49f,h*.28f,w*1.43f,h*1.23f),palette.Caustic,palette.Dark ? 27 : 66);
-            g.Restore(state);
         }
 
         static void Light(Graphics g,RectangleF ellipse,Color hue,int strength)
@@ -140,10 +211,24 @@ namespace MirrorDesk
 
         internal static void Pane(Graphics g,Control surface,AppPalette palette)
         {
+            if (surface.Width<7 || surface.Height<8 || SystemInformation.HighContrast) {
+                Backdrop(g,surface,palette);
+                return;
+            }
+            int radius=Math.Max(11,surface.Font.Height*4/5);
+            var window=surface.FindForm();
+            if (window==null || (long)surface.Width*surface.Height>CachePixelLimit) {
+                PaintPane(g,surface,radius,palette);
+                return;
+            }
+            var pixels=Panes.GetValue(surface,owner=>new PaneBuffer(owner)).Get(surface,window,radius,palette);
+            g.DrawImageUnscaled(pixels,0,0);
+        }
+
+        static void PaintPane(Graphics g,Control surface,int radius,AppPalette palette)
+        {
             Backdrop(g,surface,palette);
             var box=new Rectangle(1,1,surface.Width-3,surface.Height-4);
-            if (box.Width<4 || box.Height<4 || SystemInformation.HighContrast) return;
-            int radius=Math.Max(11,surface.Font.Height*4/5);
             var state=g.Save();
             g.SmoothingMode=SmoothingMode.AntiAlias;
             var shade=box;
@@ -313,6 +398,7 @@ namespace MirrorDesk
             int y=Padding.Top;
             using (var rule=new Pen(Color.FromArgb(palette.Dark ? 29 : 28,palette.Ink))) {
                 for (int row=0;row<rows.Length-1;row++) {
+                    if (rows[row]==0) continue;
                     y+=rows[row];
                     e.Graphics.DrawLine(rule,Padding.Left,y,Width-Padding.Right,y);
                 }
@@ -360,6 +446,7 @@ namespace MirrorDesk
         internal bool SegmentChoice { get; set; }
         internal bool ClearGlass { get; set; }
         internal InterfaceGlyph Symbol { get; set; }
+        internal Color SwatchColor { get; set; }
 
         internal GlassButton(string label,bool prominent=false)
         {
@@ -407,11 +494,21 @@ namespace MirrorDesk
             var textBox=Rectangle.Inflate(box,-Math.Max(5,left && SegmentChoice ? Font.Height/2 : Font.Height/3),0);
             int icon=Font.Height;
             int gap=Math.Max(4,icon/3);
-            if (Symbol!=InterfaceGlyph.None) {
+            if (Symbol!=InterfaceGlyph.None || !SwatchColor.IsEmpty) {
                 int textWidth=TextRenderer.MeasureText(e.Graphics,Text,Font,Size.Empty,TextFormatFlags.NoPadding).Width;
                 if (textBox.Width>=icon+gap+textWidth) {
                     int x=left ? textBox.Left : Math.Max(textBox.Left,box.X+(box.Width-icon-gap-textWidth)/2);
-                    GlassUi.Glyph(e.Graphics,Symbol,new Rectangle(x,(Height-icon)/2,icon,icon),ink);
+                    var glyph=new Rectangle(x,(Height-icon)/2,icon,icon);
+                    if (SwatchColor.IsEmpty) GlassUi.Glyph(e.Graphics,Symbol,glyph,ink);
+                    else {
+                        glyph.Inflate(-2,-2);
+                        using (var shape=GlassUi.Round(glyph,Math.Max(2,icon/5)))
+                        using (var fill=new SolidBrush(SwatchColor))
+                        using (var edge=new Pen(palette.Border)) {
+                            e.Graphics.FillPath(fill,shape);
+                            e.Graphics.DrawPath(edge,shape);
+                        }
+                    }
                     textBox=Rectangle.FromLTRB(x+icon+gap,textBox.Top,textBox.Right,textBox.Bottom);
                     left=true;
                 }
